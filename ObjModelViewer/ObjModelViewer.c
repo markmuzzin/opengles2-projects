@@ -30,6 +30,10 @@
 #define VN                          (1<<2)
 #define F                           (1<<3)
 
+#define VBO_VERT                    0
+#define VBO_TEX                     1
+#define VBO_NORM                    2
+
 #define STRLEN                      128
 
 #define DISPLAY_WIDTH               1024.0f
@@ -67,8 +71,15 @@
 /*******************************************************************/
 /*  Typedefs                                                       */
 /*******************************************************************/
-typedef struct _model_t
+typedef struct _object_t
 {
+    GLfloat *vertArray;
+    GLfloat *texArray;
+    GLfloat *normArray;
+
+    char *materialFilename;
+    GLuint texId;
+
 	GLfloat *v;
 	GLuint numOfVertices;
     GLuint numOfElementsPerVertices;
@@ -84,7 +95,7 @@ typedef struct _model_t
     GLuint *f;
     GLuint numOfFaces;
     GLuint numOfIndicesPerFace;
-} model_t;
+} object_t;
 
 typedef struct _objVerts3_t 
 {
@@ -99,16 +110,6 @@ typedef struct _objTexCoords2_t
    GLfloat y;
 } objTexCoords2_t;
 
-typedef struct {
-    GLuint v1;
-    GLuint vt1;
-    GLuint v2;
-    GLuint vt2;
-    GLuint v3;
-    GLuint vt3;
-} faces3_t;
-
-
 /*******************************************************************/
 /*  Enums                                                          */
 /*******************************************************************/
@@ -121,10 +122,7 @@ typedef enum _retCode_e {
 /*******************************************************************/
 /*  Global Variables                                               */
 /*******************************************************************/
-static GLfloat *vertArray                = NULL;
-static GLfloat *texArray                 = NULL;
-static GLuint vboids[2]                  = {0};
-static GLuint textureId                  = 0;
+static GLuint vboids[3]                  = {0};
 
 static GLfloat persepctiveProjMatrix[16] = {0.0f};
 static GLfloat modelViewProjMatrix[16]   = {0.0f};
@@ -141,12 +139,16 @@ static vec3_t cameraPosition             = {0.0f, 0.0f, DEFAULT_CAM_DIST};
 static vec3_t cameraFront                = {0.0f, 0.0f, -1.0f};
 static vec3_t cameraUp                   = {0.0f, 1.0f,  0.0f};
 
+static vec3_t lightPosition              = {0.0f, 5.0f, 20.0f};
+
 static GLint shaderProgram               = -1;
 static GLint aVertexLoc                  = -1;
+static GLint aNormalLoc                  = -1;
 static GLint aTexCoordsLoc               = -1;
 
 static GLint uTextureColorLoc            = -1;
 static GLint uMVPLoc                     = -1;
+static GLint uLightPosLoc                = -1;
 
 static GLint appShutdown                 = 0;
 
@@ -155,18 +157,21 @@ static const GLchar* vertex_shader_source =
     "precision mediump float;\n"
 
     "attribute vec2 aTexCoords;\n"
-    "attribute vec4 aPosition;\n"
+    "attribute vec3 aPosition;\n"
+    "attribute vec3 aNormals;\n"
 
     "varying vec2 vTexCoords;\n"
-    "varying vec4 vPosition;\n"
+    "varying vec3 vPosition;\n"
+    "varying vec3 vNormals;\n"
 
     "uniform mat4 uMVP;\n"
 
     "void main(void)\n"
     "{\n"
         "vTexCoords = aTexCoords;\n"
-        "vPosition = vec4(aPosition.xyz, 1.0);"
-        "gl_Position = vPosition * uMVP;\n"
+        "vPosition = aPosition;\n"
+        "vNormals = aNormals;\n"
+        "gl_Position = vec4(vPosition, 1.0) * uMVP;\n"
     "}\n"
 };
 
@@ -174,15 +179,24 @@ static const GLchar* vertex_shader_source =
 static const GLchar* fragment_shader_source =
 {
     "precision mediump float;\n"
-    "varying vec4 vPosition;\n"
-    "varying vec2 vTexCoords;\n"
 
+    "uniform vec3 uLightPos;\n"
     "uniform sampler2D uTextureColor;\n"
+
+    "varying vec3 vPosition;\n"
+    "varying vec2 vTexCoords;\n"
+    "varying vec3 vNormals;\n"
 
     "void main(void)\n"
     "{\n"
+        "float distance = length(uLightPos - vPosition);\n"
+        "vec3 lightVector = normalize(uLightPos - vPosition);\n"
+
+        "float diffuse = max(dot(vNormals, lightVector), 0.1);\n"
+        "diffuse = diffuse * (1000.0 / (1.0 + (1.25 * (distance * distance))));\n"
+
         "vec4 color = texture2D(uTextureColor, vTexCoords);\n"
-        "gl_FragColor = color.bgra;\n"
+        "gl_FragColor = color.bgra * (vec4(0.3, 0.3, 0.3, 1.0) + diffuse);\n"
     "}\n"
 };
 
@@ -313,8 +327,10 @@ void loadShader(void)
     /* Get the vertex attribute and color uniform locations */
     aVertexLoc = glGetAttribLocation(shaderProgram, "aPosition");
     aTexCoordsLoc = glGetAttribLocation(shaderProgram, "aTexCoords");
+    aNormalLoc = glGetAttribLocation(shaderProgram, "aNormals");
     uTextureColorLoc = glGetUniformLocation(shaderProgram, "uTextureColor");
     uMVPLoc = glGetUniformLocation(shaderProgram, "uMVP");
+    uLightPosLoc = glGetUniformLocation(shaderProgram, "uLightPos");
 
     /* Use program */
     glUseProgram(shaderProgram);
@@ -324,7 +340,7 @@ void loadShader(void)
 }
 
 
-GLboolean loadTexture(const char *filename)
+GLboolean loadTexture(object_t *object, char *filename)
 {
     GLubyte *data = NULL;
     FILE *file = NULL;
@@ -352,8 +368,8 @@ GLboolean loadTexture(const char *filename)
     fclose( file );
 
     /* Generate and store texture */
-    glGenTextures(1, &textureId);
-    glBindTexture(GL_TEXTURE_2D, textureId);
+    glGenTextures(1, &object->texId);
+    glBindTexture(GL_TEXTURE_2D, object->texId);
     glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGB8, width, height);
     glTexSubImage2D(GL_TEXTURE_2D, 0,0,0, width, height, GL_RGB, GL_UNSIGNED_BYTE, data);
     glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
@@ -425,9 +441,10 @@ void initGL(void)
     updateModelViewProjMatrix();
 
     /* Generate VBO buffers */
-    glGenBuffers(2, vboids);
+    glGenBuffers(3, vboids);
 
-    glfwSwapInterval(0);
+    /* Load spotligt position */
+    glUniform3fv(uLightPosLoc, 1, (GLfloat*)&lightPosition);
 }
 
 
@@ -486,7 +503,7 @@ void addIntegerData(GLuint **buffer, char *data, GLuint *numOfData)
 }
 
 
-GLboolean loadObjFile(char *fileName, model_t *model)
+GLboolean loadObjFile(object_t *object, char *fileName)
 {
     FILE *pFile;
  	char line[STRLEN];
@@ -505,10 +522,10 @@ GLboolean loadObjFile(char *fileName, model_t *model)
  
     while(fgets(line, STRLEN, pFile) != NULL )
     {
-        GLubyte v  = (strncmp(line, "v ", 2) == 0) ? V  : 0;
-        GLubyte vt = (strncmp(line, "vt", 2) == 0) ? VT : 0;
-        GLubyte vn = (strncmp(line, "vn", 2) == 0) ? VN : 0;
-        GLubyte f  = (strncmp(line, "f ", 2) == 0) ? F  : 0;
+        GLubyte v  = (strncmp(line, "v ",  2) == 0) ? V  : 0;
+        GLubyte vt = (strncmp(line, "vt ", 3) == 0) ? VT : 0;
+        GLubyte vn = (strncmp(line, "vn ", 3) == 0) ? VN : 0;
+        GLubyte f  = (strncmp(line, "f ",  2) == 0) ? F  : 0;
 
         GLubyte entry = v | vt | vn | f;
         numOfElements = 0;
@@ -520,17 +537,17 @@ GLboolean loadObjFile(char *fileName, model_t *model)
             switch (entry)
             {
                 case V:
-                    addFloatData(&model->v, token, &model->numOfVertices); 
+                    addFloatData(&object->v, token, &object->numOfVertices); 
                     numOfElements++;
                     break;
 
                 case VT:
-                    addFloatData(&model->vt, token, &model->numOfTexCoords); 
+                    addFloatData(&object->vt, token, &object->numOfTexCoords); 
                     numOfElements++;
                     break;
 
                 case VN:
-                    addFloatData(&model->vn, token, &model->numOfNormals); 
+                    addFloatData(&object->vn, token, &object->numOfNormals); 
                     numOfElements++; 
                     break;
 
@@ -541,7 +558,7 @@ GLboolean loadObjFile(char *fileName, model_t *model)
 
                         while (subToken != NULL) 
                         {
-                            addIntegerData(&model->f, subToken, &model->numOfFaces); 
+                            addIntegerData(&object->f, subToken, &object->numOfFaces); 
                             numOfElements++;
                             subToken = strtok_r(NULL, "/", &entryString);
                         }
@@ -557,112 +574,184 @@ GLboolean loadObjFile(char *fileName, model_t *model)
 
         switch (entry)
         {
-            case V:     model->numOfElementsPerVertices = numOfElements; break;
-            case VT:    model->numOfElementsPerTexCoords = numOfElements; break;
-            case VN:    model->numOfElementsPerNormals = numOfElements; break;
-            case F:     model->numOfIndicesPerFace = numOfElements; break;
+            case V:     object->numOfElementsPerVertices = numOfElements; break;
+            case VT:    object->numOfElementsPerTexCoords = numOfElements; break;
+            case VN:    object->numOfElementsPerNormals = numOfElements; break;
+            case F:     object->numOfIndicesPerFace = numOfElements; break;
             default:    break;
         }      
     }
        
     fclose (pFile);
   
-    model->numOfVertices /= (model->numOfElementsPerVertices) ? model->numOfElementsPerVertices : 1;
-    model->numOfTexCoords /= (model->numOfElementsPerTexCoords) ? model->numOfElementsPerTexCoords : 1;
-    model->numOfNormals /= (model->numOfElementsPerNormals) ? model->numOfElementsPerNormals : 1;
-    model->numOfFaces /= (model->numOfIndicesPerFace) ? model->numOfIndicesPerFace : 1;
+    object->numOfVertices /= (object->numOfElementsPerVertices) ? object->numOfElementsPerVertices : 1;
+    object->numOfTexCoords /= (object->numOfElementsPerTexCoords) ? object->numOfElementsPerTexCoords : 1;
+    object->numOfNormals /= (object->numOfElementsPerNormals) ? object->numOfElementsPerNormals : 1;
+    object->numOfFaces /= (object->numOfIndicesPerFace) ? object->numOfIndicesPerFace : 1;
   
     return GL_TRUE;
 }
 
 
-void drawVertices(model_t model)
+void drawVertices(object_t *object)
 {
-    glBindBuffer(GL_ARRAY_BUFFER, vboids[0]);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(GLfloat)*model.numOfFaces*2*3, texArray, GL_STATIC_DRAW);
-    glVertexAttribPointer(aTexCoordsLoc, 2, GL_FLOAT, 0, 0, BUFFER_OFFSET(0));
+    glBindTexture(GL_TEXTURE_2D, object->texId);
 
-    glBindBuffer(GL_ARRAY_BUFFER, vboids[1]);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(GLfloat)*model.numOfFaces*3*3, vertArray, GL_STATIC_DRAW);
+    glBindBuffer(GL_ARRAY_BUFFER, vboids[VBO_VERT]);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(GLfloat)*object->numOfFaces*3*3, object->vertArray, GL_STATIC_DRAW);
     glVertexAttribPointer(aVertexLoc, 3, GL_FLOAT, 0, 0, BUFFER_OFFSET(0));
 
+    glBindBuffer(GL_ARRAY_BUFFER, vboids[VBO_TEX]);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(GLfloat)*object->numOfFaces*2*3, object->texArray, GL_STATIC_DRAW);
+    glVertexAttribPointer(aTexCoordsLoc, 2, GL_FLOAT, 0, 0, BUFFER_OFFSET(0));
+
+    glBindBuffer(GL_ARRAY_BUFFER, vboids[VBO_NORM]);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(GLfloat)*object->numOfFaces*2*3, object->normArray, GL_STATIC_DRAW);
+    glVertexAttribPointer(aNormalLoc, 3, GL_FLOAT, 0, 0, BUFFER_OFFSET(0));
+
     glEnableVertexAttribArray(aVertexLoc);
+    glEnableVertexAttribArray(aNormalLoc);
     glEnableVertexAttribArray(aTexCoordsLoc);
 
-    glDrawArrays(GL_TRIANGLES, 0, model.numOfFaces*3);
+    glDrawArrays(GL_TRIANGLES, 0, object->numOfFaces*3);
 
     glDisableVertexAttribArray(aVertexLoc);
+    glDisableVertexAttribArray(aNormalLoc);
     glDisableVertexAttribArray(aTexCoordsLoc);
 }
 
 
-void prepareModel(model_t model)
+void prepareObjectArrays(object_t *object)
 {
-    GLint i, v1, v2, v3, vt1, vt2, vt3;
+    GLint i;
+    GLint v1 = 0, v2 = 0, v3 = 0;
+    GLint vt1 = 0, vt2 = 0, vt3 = 0;
+    GLint vn1 = 0, vn2 = 0, vn3 = 0;
 
-    objVerts3_t *vertices = (objVerts3_t *)model.v;
-    faces3_t *faces = (faces3_t *)model.f;
-    objTexCoords2_t *tex = (objTexCoords2_t *)model.vt;
+    /* Assign pointers to input values */
+    objVerts3_t *vertices = (objVerts3_t *)object->v;
+    objVerts3_t *norms = (objVerts3_t *)object->vn;
+    objTexCoords2_t *tex = (objTexCoords2_t *)object->vt;
+    GLuint *faces = (GLuint *)object->f;
 
     /* Create vertex and texture buffers */
-    vertArray = (GLfloat *)malloc(sizeof(GLfloat)*model.numOfFaces*3*3);
-    texArray = (GLfloat *)malloc(sizeof(GLfloat)*model.numOfFaces*2*3);
+    object->vertArray = (GLfloat *)malloc(sizeof(GLfloat)*object->numOfFaces*3*3);
+    object->texArray = (GLfloat *)malloc(sizeof(GLfloat)*object->numOfFaces*2*3);
+    object->normArray = (GLfloat *)malloc(sizeof(GLfloat)*object->numOfFaces*3*3);
     
     GLuint vc = 0;
     GLuint tc = 0;
+    GLuint vn = 0;
 
-    /* Create vertex and texture arrays from face data */
-    for(i=0;i<model.numOfFaces;i++)
+    GLuint stride = (object->numOfNormals == 0) ? 6 : 9;
+    GLuint offset = (object->numOfNormals == 0) ? 0 : 1;
+
+    for(i=0;i<object->numOfFaces;i++)
     {
-        v1=faces[i].v1-1;
-        v2=faces[i].v2-1;
-        v3=faces[i].v3-1;
+        v1  = faces[(stride*i)+0]-1;
+        vt1 = faces[(stride*i)+1]-1;
+        v2  = faces[(stride*i)+2+offset]-1;
+        vt2 = faces[(stride*i)+3+offset]-1;
+        v3  = faces[(stride*i)+4+(offset*2)]-1;           
+        vt3 = faces[(stride*i)+5+(offset*2)]-1;
         
-        vt1=faces[i].vt1-1;
-        vt2=faces[i].vt2-1;
-        vt3=faces[i].vt3-1;
+        if(object->numOfNormals != 0)
+        {
+            vn1 = faces[(stride*i)+2]-1;
+            vn2 = faces[(stride*i)+5+offset]-1;
+            vn3 = faces[(stride*i)+8+(offset*2)]-1;
+        }
 
-        vertArray[vc++] = vertices[v1].x;
-        vertArray[vc++] = vertices[v1].y;
-        vertArray[vc++] = vertices[v1].z;
+        object->vertArray[vc++] = vertices[v1].x;
+        object->vertArray[vc++] = vertices[v1].y;
+        object->vertArray[vc++] = vertices[v1].z;
         
-        vertArray[vc++] = vertices[v2].x;
-        vertArray[vc++] = vertices[v2].y;
-        vertArray[vc++] = vertices[v2].z;
+        object->vertArray[vc++] = vertices[v2].x;
+        object->vertArray[vc++] = vertices[v2].y;
+        object->vertArray[vc++] = vertices[v2].z;
 
-        vertArray[vc++] = vertices[v3].x;
-        vertArray[vc++] = vertices[v3].y;
-        vertArray[vc++] = vertices[v3].z;
+        object->vertArray[vc++] = vertices[v3].x;
+        object->vertArray[vc++] = vertices[v3].y;
+        object->vertArray[vc++] = vertices[v3].z;
 
-        texArray[tc++] = tex[vt1].x;
-        texArray[tc++] = tex[vt1].y;
+        if(object->numOfNormals != 0)
+        {
+            object->normArray[vn++] = norms[vn1].x;
+            object->normArray[vn++] = norms[vn1].y;
+            object->normArray[vn++] = norms[vn1].z;
+            
+            object->normArray[vn++] = norms[vn2].x;
+            object->normArray[vn++] = norms[vn2].y;
+            object->normArray[vn++] = norms[vn2].z;
 
-        texArray[tc++] = tex[vt2].x;
-        texArray[tc++] = tex[vt2].y;
+            object->normArray[vn++] = norms[vn3].x;
+            object->normArray[vn++] = norms[vn3].y;
+            object->normArray[vn++] = norms[vn3].z;
+        }
 
-        texArray[tc++] = tex[vt3].x;
-        texArray[tc++] = tex[vt3].y;
+        object->texArray[tc++] = tex[vt1].x;
+        object->texArray[tc++] = tex[vt1].y;
+
+        object->texArray[tc++] = tex[vt2].x;
+        object->texArray[tc++] = tex[vt2].y;
+
+        object->texArray[tc++] = tex[vt3].x;
+        object->texArray[tc++] = tex[vt3].y;
     }
 }
 
 
-void cleanUp(void)
+void cleanUp(object_t *object)
 {
-    if( vertArray != NULL )
+    if( object->vertArray != NULL )
     {
-        free(vertArray);
+        free(object->vertArray);
     }
 
-    if( texArray != NULL )
+    if( object->texArray != NULL )
     {
-        free(texArray);
+        free(object->texArray);
     }
+
+    if( object->normArray != NULL )
+    {
+        free(object->normArray);
+    }
+}
+
+
+GLboolean loadModel(object_t *object, char *objFileName, char *texFileName)
+{
+    /* This function will eventially change to parse the .stl file, and
+     * call loadObjFile + LoadTexture file based on how many objs and 
+     * textures are specified.  object will also need to become an array */
+
+    /* Load obj file */
+    printf("Loading %s object file...", objFileName);
+
+    if ( GL_FALSE == loadObjFile(object, objFileName) )
+    {
+        cleanUp(object);
+        return GL_FALSE;
+    }
+    printf("done\n");
+
+    printf("Loading %s texture file...", texFileName);
+
+    if ( GL_FALSE == loadTexture(object, texFileName) )
+    {
+        cleanUp(object);
+        return GL_FALSE;
+    }
+    printf("done\n");
+
+    return GL_TRUE;
 }
 
 
 int main(int argc, char **argv)
 {
-    model_t model = { 0 };
+    object_t object = { 0 };
 
     GLFWwindow* window;
     
@@ -689,30 +778,15 @@ int main(int argc, char **argv)
     /* GL initialization */
     initGL();
 
-    /* Load obj file */
-    printf("Loading %s object file...", argv[1]);
-    if ( GL_FALSE == loadObjFile(argv[1], &model) )
+    /* Load model */
+    if ( GL_FALSE == loadModel(&object, argv[1], argv[2]) )
     {
-        cleanUp();
+        printf("\nError loading model\n");
         return -1;
     }
-    printf("done\n");
-    
-    printf("Model vertices: %d\n", model.numOfVertices);
-    printf("Model tex coords: %d\n", model.numOfTexCoords);
-    printf("Model normals: %d\n", model.numOfNormals);
-    printf("Model faces: %d\n", model.numOfFaces);
-
-    printf("Loading %s texture file...", argv[2]);
-    if ( GL_FALSE == loadTexture(argv[2]) )
-    {
-        cleanUp();
-        return -2;
-    }
-    printf("done\n");
-    
+      
     /* Prepare vertex and texture arrays */
-    prepareModel(model);
+    prepareObjectArrays(&object);
 
     /* Loop until we need to shutdown */
     while (!glfwWindowShouldClose(window) && appShutdown == 0) 
@@ -726,11 +800,11 @@ int main(int argc, char **argv)
         /* Clear the color and depth buffer */
         glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
 
-        /* Draw the model */
-        drawVertices(model);
+        /* Draw the object */
+        drawVertices(&object);
     
-        /* Rotate the model */
-        modelRotationUp -= 2.0f;
+        /* Rotate the object */
+        modelRotationUp -= 0.5f;
         if(modelRotationUp > 360.0f)
         {
             modelRotationUp = modelRotationUp-360.0f;
@@ -745,7 +819,7 @@ int main(int argc, char **argv)
 
     glfwTerminate();
 
-    cleanUp();
+    cleanUp(&object);
 
     return 0;
 }
