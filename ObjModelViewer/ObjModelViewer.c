@@ -717,6 +717,7 @@ GLboolean loadObjFile(object_t *object, material_t *materials, char *objFilename
     object->numOfVertices /= ELEMENTS_PER_VERTEX;
     object->numOfTexCoords /= ELEMENTS_PER_TEXCOORDS;
     object->numOfNormals /= ELEMENTS_PER_VERTEX;
+
     /* Check if we have normals in the file, calculate the face count accordingly */
     object->numOfFaces /= (object->numOfNormals) ? (ELEMENTS_PER_FACE*3) : (ELEMENTS_PER_FACE*2);
   
@@ -731,21 +732,6 @@ void drawVertices(object_t *object, material_t *materials)
     GLint i;
     GLuint faceCount;
     
-    glBindBuffer(GL_ARRAY_BUFFER, vboids[VBO_VERT]);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(GLfloat)*object->numOfFaces*(ELEMENTS_PER_FACE*ELEMENTS_PER_VERTEX), object->vertArray, GL_STATIC_DRAW);
-    glVertexAttribPointer(aVertexLoc, ELEMENTS_PER_VERTEX, GL_FLOAT, 0, 0, BUFFER_OFFSET(0));
-
-    glBindBuffer(GL_ARRAY_BUFFER, vboids[VBO_TEX]);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(GLfloat)*object->numOfFaces*(ELEMENTS_PER_FACE*ELEMENTS_PER_TEXCOORDS), object->texArray, GL_STATIC_DRAW);
-    glVertexAttribPointer(aTexCoordsLoc, ELEMENTS_PER_TEXCOORDS, GL_FLOAT, 0, 0, BUFFER_OFFSET(0));
-
-    glBindBuffer(GL_ARRAY_BUFFER, vboids[VBO_NORM]);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(GLfloat)*object->numOfFaces*(ELEMENTS_PER_FACE*ELEMENTS_PER_VERTEX), object->normArray, GL_STATIC_DRAW);
-    glVertexAttribPointer(aNormalLoc, ELEMENTS_PER_VERTEX, GL_FLOAT, 0, 0, BUFFER_OFFSET(0));
-
-    glEnableVertexAttribArray(aVertexLoc);
-    glEnableVertexAttribArray(aNormalLoc);
-    glEnableVertexAttribArray(aTexCoordsLoc);
 
     for(i=0;i<object->materialChangeCount-1;i++)
     {
@@ -760,9 +746,7 @@ void drawVertices(object_t *object, material_t *materials)
     glDrawArrays(GL_TRIANGLES, object->materialChange[i].startFace*ELEMENTS_PER_FACE, faceCount*ELEMENTS_PER_FACE);
 
 
-    glDisableVertexAttribArray(aVertexLoc);
-    glDisableVertexAttribArray(aNormalLoc);
-    glDisableVertexAttribArray(aTexCoordsLoc);
+
 }
 
 
@@ -846,6 +830,10 @@ void prepareObjectArrays(object_t *object)
 
 void cleanUp(object_t *object)
 {
+    glDisableVertexAttribArray(aVertexLoc);
+    glDisableVertexAttribArray(aNormalLoc);
+    glDisableVertexAttribArray(aTexCoordsLoc);
+
     if( object->vertArray != NULL )
     {
         free(object->vertArray);
@@ -951,6 +939,25 @@ GLboolean loadModel(object_t *object, material_t *materials, char *objFileName)
     return GL_TRUE;
 }
 
+void prepareVbos(object_t *object)
+{
+    glBindBuffer(GL_ARRAY_BUFFER, vboids[VBO_VERT]);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(GLfloat)*object->numOfFaces*(ELEMENTS_PER_FACE*ELEMENTS_PER_VERTEX), object->vertArray, GL_STATIC_DRAW);
+    glVertexAttribPointer(aVertexLoc, ELEMENTS_PER_VERTEX, GL_FLOAT, 0, 0, BUFFER_OFFSET(0));
+
+    glBindBuffer(GL_ARRAY_BUFFER, vboids[VBO_TEX]);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(GLfloat)*object->numOfFaces*(ELEMENTS_PER_FACE*ELEMENTS_PER_TEXCOORDS), object->texArray, GL_STATIC_DRAW);
+    glVertexAttribPointer(aTexCoordsLoc, ELEMENTS_PER_TEXCOORDS, GL_FLOAT, 0, 0, BUFFER_OFFSET(0));
+
+    glBindBuffer(GL_ARRAY_BUFFER, vboids[VBO_NORM]);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(GLfloat)*object->numOfFaces*(ELEMENTS_PER_FACE*ELEMENTS_PER_VERTEX), object->normArray, GL_STATIC_DRAW);
+    glVertexAttribPointer(aNormalLoc, ELEMENTS_PER_VERTEX, GL_FLOAT, 0, 0, BUFFER_OFFSET(0));
+
+    glEnableVertexAttribArray(aVertexLoc);
+    glEnableVertexAttribArray(aNormalLoc);
+    glEnableVertexAttribArray(aTexCoordsLoc);
+}
+
 
 int main(int argc, char **argv)
 {
@@ -991,6 +998,9 @@ int main(int argc, char **argv)
 
     /* Prepare vertex and texture arrays */
     prepareObjectArrays(&object);
+
+    /* Prepare VBOs */
+    prepareVbos(&object);
 
     /* Loop until we need to shutdown */
     while (!glfwWindowShouldClose(window) && appShutdown == 0) 
