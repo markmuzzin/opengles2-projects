@@ -32,7 +32,11 @@
 #define USEMTL                      (1<<4)
 #define NEWMTL                      (1<<5)
 #define MAP_KD                      (1<<6)
+#define MTLLIB                      (1<<7)
 
+#define ELEMENTS_PER_FACE           3
+#define ELEMENTS_PER_VERTEX         3
+#define ELEMENTS_PER_TEXCOORDS      2
 
 #define VBO_VERT                    0
 #define VBO_TEX                     1
@@ -98,20 +102,17 @@ typedef struct _object_t
 
 	GLfloat *v;
 	GLuint numOfVertices;
-    GLuint numOfElementsPerVertices;
 
 	GLfloat *vt;
     GLuint numOfTexCoords;
-    GLuint numOfElementsPerTexCoords;
 
 	GLfloat *vn;
 	GLuint numOfNormals;
-    GLuint numOfElementsPerNormals;
 
     GLuint *f;
     GLuint numOfFaces;
-    GLuint numOfIndicesPerFace;
 
+    char *materialLibFilename;
     GLuint materialCount;
     material_change_t materialChange[300];
     GLuint materialChangeCount;
@@ -293,7 +294,8 @@ char getch(void)
 }
 
 
-GLint loadShaderProgram(const char *vertex_shader_source, const char *fragment_shader_source) {
+GLint loadShaderProgram(const char *vertex_shader_source, const char *fragment_shader_source) 
+{
     enum Consts {INFOLOG_LEN = 512};
     GLchar infoLog[INFOLOG_LEN];
     GLint fragment_shader;
@@ -444,7 +446,7 @@ void initGL(void)
     glDepthRangef(0.0f, 1.0f);
 
     /* Set clear color */
-    glClearColor(0.5f, 0.5f, 0.5f, 1.0f);
+    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
 
     /* Set viewport */
     glViewport(0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT);
@@ -584,7 +586,6 @@ GLboolean loadMtlFile(object_t *object, material_t *materials, char *mtlFilename
                 default:
                     break;
             }
-
         }
     }
 
@@ -597,15 +598,12 @@ GLboolean loadMtlFile(object_t *object, material_t *materials, char *mtlFilename
 
 GLboolean loadObjFile(object_t *object, material_t *materials, char *objFilename)
 {
-    GLboolean haveTexture = GL_FALSE;
-    GLuint numOfElements = 0;
-    FILE *pFile = NULL;
-    GLuint i;
  	char line[STRLEN];
-    char *token;
-    char *subToken;
-    char *lineString;
-    char *entryString;
+    char *token, *subToken, *lineString, *entryString;
+    FILE *pFile = NULL;
+    GLboolean haveTexture = GL_FALSE;
+    GLubyte cr, lf;
+    GLuint i, v, vt, vn, f, usemtl, mtllib;
 
     /* Open object file */
     pFile = fopen(objFilename, "r");
@@ -619,15 +617,14 @@ GLboolean loadObjFile(object_t *object, material_t *materials, char *objFilename
     /* Get the line entry */
     while(fgets(line, STRLEN, pFile) != NULL)
     {
-        GLuint v       = (strncmp(line, "v ",       2) == 0) ? V       : 0;
-        GLuint vt      = (strncmp(line, "vt ",      3) == 0) ? VT      : 0;
-        GLuint vn      = (strncmp(line, "vn ",      3) == 0) ? VN      : 0;
-        GLuint f       = (strncmp(line, "f ",       2) == 0) ? F       : 0;
-        GLuint usemtl  = (strncmp(line, "usemtl ",  7) == 0) ? USEMTL  : 0;
+        v       = (strncmp(line, "v ",      2) == 0) ? V      : 0;
+        vt      = (strncmp(line, "vt ",     3) == 0) ? VT     : 0;
+        vn      = (strncmp(line, "vn ",     3) == 0) ? VN     : 0;
+        f       = (strncmp(line, "f ",      2) == 0) ? F      : 0;
+        usemtl  = (strncmp(line, "usemtl ", 7) == 0) ? USEMTL : 0;
+        mtllib  = (strncmp(line, "mtllib ", 7) == 0) ? MTLLIB : 0;
 
-        numOfElements = 0;
-
-        GLuint entry = v | vt | vn | f | usemtl;
+        GLuint entry = v | vt | vn | f | usemtl | mtllib;
 
         token = strtok_r(line, " ", &lineString);
                     
@@ -635,19 +632,22 @@ GLboolean loadObjFile(object_t *object, material_t *materials, char *objFilename
         {   
             switch (entry)
             {
+                case MTLLIB:
+                    object->materialLibFilename = (char *)malloc(sizeof(GLbyte)*strlen(token));
+                    memset(object->materialLibFilename , 0, sizeof(GLbyte)*strlen(token));
+                    strncpy(object->materialLibFilename, token, strlen(token)-cr-lf);
+                    break;
+
                 case V:
                     addFloatData(&object->v, token, &object->numOfVertices); 
-                    numOfElements++;
                     break;
 
                 case VT:
                     addFloatData(&object->vt, token, &object->numOfTexCoords); 
-                    numOfElements++;
                     break;
 
                 case VN:
                     addFloatData(&object->vn, token, &object->numOfNormals); 
-                    numOfElements++; 
                     break;
 
                 case F:
@@ -658,7 +658,6 @@ GLboolean loadObjFile(object_t *object, material_t *materials, char *objFilename
                         while (subToken != NULL) 
                         {
                             addIntegerData(&object->f, subToken, &object->numOfFaces); 
-                            numOfElements++;
                             subToken = strtok_r(NULL, "/", &entryString);
                         }
 
@@ -680,7 +679,7 @@ GLboolean loadObjFile(object_t *object, material_t *materials, char *objFilename
 
                             /* Mark the start face that uses this texture */
                             object->materialChange[object->materialChangeCount].startFace = object->numOfFaces;
-                            object->materialChange[object->materialChangeCount].startFace /= 9;
+                            object->materialChange[object->materialChangeCount].startFace /= (ELEMENTS_PER_FACE*ELEMENTS_PER_VERTEX);
                             object->materialChange[object->materialChangeCount].material = &materials[i];
                             object->materialChangeCount++;
                             break;
@@ -690,8 +689,8 @@ GLboolean loadObjFile(object_t *object, material_t *materials, char *objFilename
                     /* If we dont have this texture name stored yet */
                     if ( GL_FALSE == haveTexture ) 
                     {
-                        GLubyte cr = (strstr(token, "\r") == 0) ? 0 : 1;
-                        GLubyte lf = (strstr(token, "\n") == 0) ? 0 : 1;
+                        cr = (strstr(token, "\r") == 0) ? 0 : 1;
+                        lf = (strstr(token, "\n") == 0) ? 0 : 1;
 
                         /* Add material name */
                         materials[object->materialCount].name = (char *)malloc(sizeof(GLbyte)*strlen(token));
@@ -700,7 +699,7 @@ GLboolean loadObjFile(object_t *object, material_t *materials, char *objFilename
 
                         /* Mark the start face that uses this texture */
                         object->materialChange[object->materialChangeCount].startFace = object->numOfFaces;
-                        object->materialChange[object->materialChangeCount].startFace /= 9;
+                        object->materialChange[object->materialChangeCount].startFace /= (ELEMENTS_PER_FACE*ELEMENTS_PER_VERTEX);
                         object->materialChange[object->materialChangeCount].material = &materials[object->materialCount];
                         object->materialChangeCount++;
 
@@ -713,27 +712,13 @@ GLboolean loadObjFile(object_t *object, material_t *materials, char *objFilename
                     break;
             }
         }
-
-
-        /* Store the number of elements per entry */
-        /* This will be stored each time, but the value for each element needs to be consistent anyways */
-        if ( numOfElements != 0)
-        {
-            switch (entry)
-            {
-                case V:     object->numOfElementsPerVertices = numOfElements; break;
-                case VT:    object->numOfElementsPerTexCoords = numOfElements; break;
-                case VN:    object->numOfElementsPerNormals = numOfElements; break;
-                case F:     object->numOfIndicesPerFace = numOfElements; break;
-                default:    break;
-            }
-        }
     }
- 
-    object->numOfVertices /= (object->numOfElementsPerVertices) ? object->numOfElementsPerVertices : 1;
-    object->numOfTexCoords /= (object->numOfElementsPerTexCoords) ? object->numOfElementsPerTexCoords : 1;
-    object->numOfNormals /= (object->numOfElementsPerNormals) ? object->numOfElementsPerNormals : 1;
-    object->numOfFaces /= (object->numOfIndicesPerFace) ? object->numOfIndicesPerFace : 1;
+
+    object->numOfVertices /= ELEMENTS_PER_VERTEX;
+    object->numOfTexCoords /= ELEMENTS_PER_TEXCOORDS;
+    object->numOfNormals /= ELEMENTS_PER_VERTEX;
+    /* Check if we have normals in the file, calculate the face count accordingly */
+    object->numOfFaces /= (object->numOfNormals) ? (ELEMENTS_PER_FACE*3) : (ELEMENTS_PER_FACE*2);
   
     fclose (pFile);
 
@@ -747,16 +732,16 @@ void drawVertices(object_t *object, material_t *materials)
     GLuint faceCount;
     
     glBindBuffer(GL_ARRAY_BUFFER, vboids[VBO_VERT]);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(GLfloat)*object->numOfFaces*3*3, object->vertArray, GL_STATIC_DRAW);
-    glVertexAttribPointer(aVertexLoc, 3, GL_FLOAT, 0, 0, BUFFER_OFFSET(0));
+    glBufferData(GL_ARRAY_BUFFER, sizeof(GLfloat)*object->numOfFaces*(ELEMENTS_PER_FACE*ELEMENTS_PER_VERTEX), object->vertArray, GL_STATIC_DRAW);
+    glVertexAttribPointer(aVertexLoc, ELEMENTS_PER_VERTEX, GL_FLOAT, 0, 0, BUFFER_OFFSET(0));
 
     glBindBuffer(GL_ARRAY_BUFFER, vboids[VBO_TEX]);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(GLfloat)*object->numOfFaces*2*3, object->texArray, GL_STATIC_DRAW);
-    glVertexAttribPointer(aTexCoordsLoc, 2, GL_FLOAT, 0, 0, BUFFER_OFFSET(0));
+    glBufferData(GL_ARRAY_BUFFER, sizeof(GLfloat)*object->numOfFaces*(ELEMENTS_PER_FACE*ELEMENTS_PER_TEXCOORDS), object->texArray, GL_STATIC_DRAW);
+    glVertexAttribPointer(aTexCoordsLoc, ELEMENTS_PER_TEXCOORDS, GL_FLOAT, 0, 0, BUFFER_OFFSET(0));
 
     glBindBuffer(GL_ARRAY_BUFFER, vboids[VBO_NORM]);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(GLfloat)*object->numOfFaces*3*3, object->normArray, GL_STATIC_DRAW);
-    glVertexAttribPointer(aNormalLoc, 3, GL_FLOAT, 0, 0, BUFFER_OFFSET(0));
+    glBufferData(GL_ARRAY_BUFFER, sizeof(GLfloat)*object->numOfFaces*(ELEMENTS_PER_FACE*ELEMENTS_PER_VERTEX), object->normArray, GL_STATIC_DRAW);
+    glVertexAttribPointer(aNormalLoc, ELEMENTS_PER_VERTEX, GL_FLOAT, 0, 0, BUFFER_OFFSET(0));
 
     glEnableVertexAttribArray(aVertexLoc);
     glEnableVertexAttribArray(aNormalLoc);
@@ -767,12 +752,12 @@ void drawVertices(object_t *object, material_t *materials)
         glBindTexture(GL_TEXTURE_2D, object->materialChange[i].material->texId);
         faceCount = object->materialChange[i+1].startFace - object->materialChange[i].startFace;
 
-        glDrawArrays(GL_TRIANGLES, object->materialChange[i].startFace*3, faceCount*3);
+        glDrawArrays(GL_TRIANGLES, object->materialChange[i].startFace*ELEMENTS_PER_FACE, faceCount*ELEMENTS_PER_FACE);
     }
 
     glBindTexture(GL_TEXTURE_2D, object->materialChange[i].material->texId);
     faceCount = (object->numOfFaces - object->materialChange[i].startFace+1);
-    glDrawArrays(GL_TRIANGLES, object->materialChange[i].startFace*3, faceCount*3);
+    glDrawArrays(GL_TRIANGLES, object->materialChange[i].startFace*ELEMENTS_PER_FACE, faceCount*ELEMENTS_PER_FACE);
 
 
     glDisableVertexAttribArray(aVertexLoc);
@@ -788,6 +773,7 @@ void prepareObjectArrays(object_t *object)
     GLint v1 = 0, v2 = 0, v3 = 0;
     GLint vt1 = 0, vt2 = 0, vt3 = 0;
     GLint vn1 = 0, vn2 = 0, vn3 = 0;
+    GLuint vc = 0, tc = 0, vn = 0;
 
     /* Assign pointers to input values */
     objVerts3_t *vertices = (objVerts3_t *)object->v;
@@ -796,15 +782,11 @@ void prepareObjectArrays(object_t *object)
     GLuint *faces = (GLuint *)object->f;
 
     /* Create vertex and texture buffers */
-    object->vertArray = (GLfloat *)malloc(sizeof(GLfloat)*object->numOfFaces*3*3);
-    object->texArray = (GLfloat *)malloc(sizeof(GLfloat)*object->numOfFaces*2*3);
-    object->normArray = (GLfloat *)malloc(sizeof(GLfloat)*object->numOfFaces*3*3);
+    object->vertArray = (GLfloat *)malloc(sizeof(GLfloat)*object->numOfFaces*(ELEMENTS_PER_FACE*ELEMENTS_PER_VERTEX));
+    object->texArray = (GLfloat *)malloc(sizeof(GLfloat)*object->numOfFaces*(ELEMENTS_PER_FACE*ELEMENTS_PER_TEXCOORDS));
+    object->normArray = (GLfloat *)malloc(sizeof(GLfloat)*object->numOfFaces*(ELEMENTS_PER_FACE*ELEMENTS_PER_VERTEX));
     
-    GLuint vc = 0;
-    GLuint tc = 0;
-    GLuint vn = 0;
-
-    GLuint stride = (object->numOfNormals == 0) ? 6 : 9;
+    GLuint stride = (object->numOfNormals == 0) ? (ELEMENTS_PER_FACE*ELEMENTS_PER_TEXCOORDS) : (ELEMENTS_PER_FACE*ELEMENTS_PER_VERTEX);
     GLuint offset = (object->numOfNormals == 0) ? 0 : 1;
 
     for(i=0;i<object->numOfFaces;i++)
@@ -881,9 +863,37 @@ void cleanUp(object_t *object)
 }
 
 
-GLboolean loadModel(object_t *object, material_t *materials, char *objFileName, char *mtlFileName)
+char* getPath(char *argv)
+{
+    char *path;
+    char *token, *lineString;
+
+    path = malloc(sizeof(char) * (strlen(argv)));
+    memset(path, 0, sizeof(char) * (strlen(argv)));
+
+    token = strtok_r(argv, "/", &lineString);
+
+    do
+    {
+        if(strstr(token, ".obj") == NULL)
+        {
+            strcat(path, token);
+            strcat(path, "/");
+        }
+
+    } while((token = strtok_r(NULL, "/", &lineString)) != NULL );
+
+    path = realloc(path, sizeof(char) * strlen(path));
+
+    return path;
+}
+
+
+GLboolean loadModel(object_t *object, material_t *materials, char *objFileName)
 {
     GLint i;
+    GLubyte cr, lf;
+    char *mtlFile;
 
     /* Load and parse obj file */
     printf("Loading object file: %s...", objFileName);
@@ -895,10 +905,17 @@ GLboolean loadModel(object_t *object, material_t *materials, char *objFileName, 
     }
     printf("done\n");
 
+    /* Construct material filenamd */
+    mtlFile = getPath(objFileName);
+    mtlFile = (char*)realloc(mtlFile, sizeof(char) * (strlen(mtlFile) + strlen(object->materialLibFilename)));
+
+    cr = (strstr(object->materialLibFilename, "\r") == NULL) ? 0 : 1;
+    lf = (strstr(object->materialLibFilename, "\n") == NULL) ? 0 : 1;
+    strncat(mtlFile, object->materialLibFilename, strlen(object->materialLibFilename)-cr-lf);
 
     /* Load and parse material file */
-    printf("Loading mtl file: %s...", mtlFileName);
-    if ( GL_FALSE == loadMtlFile(object, materials, mtlFileName) )
+    printf("Loading mtl file: %s...", mtlFile);
+    if ( GL_FALSE == loadMtlFile(object, materials, mtlFile) )
     {
         return GL_FALSE;
     }
@@ -929,6 +946,8 @@ GLboolean loadModel(object_t *object, material_t *materials, char *objFileName, 
         }
     }
 
+    free(mtlFile);
+
     return GL_TRUE;
 }
 
@@ -955,16 +974,16 @@ int main(int argc, char **argv)
     loadShader();
 
     /* Set camera distance if provided */
-    if (argc > 3)
+    if (argc > 2)
     {
-        cameraPosition.z = atof(argv[3]);
+        cameraPosition.z = atof(argv[2]);
     }
 
     /* GL initialization */
     initGL();
 
     /* Load model */
-    if ( GL_FALSE == loadModel(&object, materials, argv[1], argv[2]) )
+    if ( GL_FALSE == loadModel(&object, materials, argv[1]) )
     {
         printf("\nError loading model\n");
         return -1;
