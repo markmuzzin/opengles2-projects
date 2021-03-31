@@ -23,10 +23,12 @@ SpaceScene.c
 <br>
 <br>
 <br>
+<br>
 
 <a href="url"><img src="https://user-images.githubusercontent.com/81455676/112711267-76425380-8e9d-11eb-8739-689a802de7aa.png" align="right" height="384" width="512" ></a>
 ObjModelViewer.c
-- Renders Wavefront .obj files (https://en.wikipedia.org/wiki/Wavefront_.obj_file)
-- Currenlty supports parsing of vertices, textures (single image) and faces, (v/vt/f)
-- Obj Models from: https://www.artec3d.com/3d-models/obj 
+- Wavefront .obj files (https://en.wikipedia.org/wiki/Wavefront_.obj_file)
+- Currenlty supports parsing of vertices, multiple textures and faces, (v/vt/f)
+- Loading of material file, texture filenames
+- 3D scanned Obj models from: https://www.artec3d.com/3d-models/obj 
 - Camera pan, rotation and zoom
