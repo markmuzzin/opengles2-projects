@@ -33,6 +33,7 @@
 #define NEWMTL                      (1<<5)
 #define MAP_KD                      (1<<6)
 #define MTLLIB                      (1<<7)
+#define BLANK                       (1<<8)
 
 #define ELEMENTS_PER_FACE           3
 #define ELEMENTS_PER_VERTEX         3
@@ -61,12 +62,15 @@
 #define SCENE_LEFT                  0.0f
 #define SCENE_BOTTOM                0.0f
 
-#define MOVE                        20.0f
-#define MOVE_BIG                    100.0f
+#define MOVE                        10.0f
+#define MOVE_BIG                    50.0f
 
 #define DEFAULT_FOV                 35.0f
 
 #define MAX_MATERIALS               32
+#define MAX_MATERIAL_CHANGES        300
+#define DEFAULT_AMBIENT             0.5f
+#define DEFAULT_SPECULAR            0.5f
 
 #define KEYS_UP                     65
 #define KEYS_DOWN                   'B'
@@ -114,7 +118,7 @@ typedef struct _object_t
 
     char *materialLibFilename;
     GLuint materialCount;
-    material_change_t materialChange[300];
+    material_change_t materialChange[MAX_MATERIAL_CHANGES];
     GLuint materialChangeCount;
 } object_t;
 
@@ -130,6 +134,7 @@ typedef struct _objTexCoords2_t
    GLfloat x;
    GLfloat y;
 } objTexCoords2_t;
+
 
 /*******************************************************************/
 /*  Enums                                                          */
@@ -160,7 +165,7 @@ static vec3_t cameraPosition             = {0.0f, 0.0f, DEFAULT_CAM_DIST};
 static vec3_t cameraFront                = {0.0f, 0.0f, -1.0f};
 static vec3_t cameraUp                   = {0.0f, 1.0f,  0.0f};
 
-static vec3_t lightPosition              = {10.0f, 15.0f, -30.0f};
+static vec3_t lightPosition              = {10.0f, 15.0f, 30.0f};
 
 static GLint shaderProgram               = -1;
 static GLint aVertexLoc                  = -1;
@@ -170,6 +175,9 @@ static GLint aTexCoordsLoc               = -1;
 static GLint uTextureColorLoc            = -1;
 static GLint uMVPLoc                     = -1;
 static GLint uLightPosLoc                = -1;
+static GLint uAmbientLightLoc            = -1;
+static GLint uViewPositionLoc            = -1;
+static GLint uSpecularStrengthLoc        = -1;
 
 static GLint appShutdown                 = 0;
 
@@ -177,47 +185,55 @@ static const GLchar* vertex_shader_source =
 {
     "precision mediump float;\n"
 
-    "attribute vec2 aTexCoords;\n"
+    "attribute vec2 aTexCoord;\n"
     "attribute vec3 aPosition;\n"
-    "attribute vec3 aNormals;\n"
+    "attribute vec3 aNormal;\n"
 
-    "varying vec2 vTexCoords;\n"
+    "varying vec2 vTexCoord;\n"
     "varying vec3 vPosition;\n"
-    "varying vec3 vNormals;\n"
+    "varying vec3 vNormal;\n"
 
     "uniform mat4 uMVP;\n"
 
     "void main(void)\n"
     "{\n"
-        "vTexCoords = aTexCoords;\n"
+        "vTexCoord = aTexCoord;\n"
         "vPosition = aPosition;\n"
-        "vNormals = aNormals;\n"
+        "vNormal = aNormal;\n"
         "gl_Position = vec4(vPosition, 1.0) * uMVP;\n"
     "}\n"
 };
-
 
 static const GLchar* fragment_shader_source =
 {
     "precision mediump float;\n"
 
     "uniform vec3 uLightPos;\n"
+    "uniform vec3 uViewPosition;\n"
     "uniform sampler2D uTextureColor;\n"
 
+    "uniform float uAmbientLight;\n"
+    "uniform float uSpecularStrength;\n"
+
     "varying vec3 vPosition;\n"
-    "varying vec2 vTexCoords;\n"
-    "varying vec3 vNormals;\n"
+    "varying vec2 vTexCoord;\n"
+    "varying vec3 vNormal;\n"
 
     "void main(void)\n"
     "{\n"
-        "vec4 color = texture2D(uTextureColor, vTexCoords);\n"
+        "vec3 normal = normalize(vNormal);\n"
         "vec3 lightDirection = normalize(uLightPos - vPosition);\n"
-        "float diffuse = max(dot(vPosition, lightDirection), 0.0);\n"
-        "float distance = length(uLightPos - vPosition);\n"
 
-        "diffuse = diffuse * (500.0 / (1.0 + (1.25 * (distance * distance))));\n"
+        "float diffuse = max(dot(normal, lightDirection), 0.0);\n"
 
-        "gl_FragColor = color.bgra * (0.8+diffuse);\n"
+        "vec3 viewDirection = normalize(uViewPosition - vPosition);\n"
+        "vec3 reflectDirection = reflect(-lightDirection, normal);\n" 
+        "float spec = pow(max(dot(viewDirection, reflectDirection), 0.0), 32.0);\n"
+        "float specular = uSpecularStrength * spec;\n"
+
+        "vec4 color = texture2D(uTextureColor, vTexCoord);\n"
+
+        "gl_FragColor = color.bgra * (uAmbientLight + specular + diffuse);\n"
     "}\n"
 };
 
@@ -308,7 +324,8 @@ GLint loadShaderProgram(const char *vertex_shader_source, const char *fragment_s
     glShaderSource(vertex_shader, 1, &vertex_shader_source, NULL);
     glCompileShader(vertex_shader);
     glGetShaderiv(vertex_shader, GL_COMPILE_STATUS, &success);
-    if (!success) {
+    if (!success) 
+    {
         glGetShaderInfoLog(vertex_shader, INFOLOG_LEN, NULL, infoLog);
         printf("ERROR::SHADER::VERTEX::COMPILATION_FAILED\n%s\n", infoLog);
     }
@@ -318,7 +335,8 @@ GLint loadShaderProgram(const char *vertex_shader_source, const char *fragment_s
     glShaderSource(fragment_shader, 1, &fragment_shader_source, NULL);
     glCompileShader(fragment_shader);
     glGetShaderiv(fragment_shader, GL_COMPILE_STATUS, &success);
-    if (!success) {
+    if (!success) 
+    {
         glGetShaderInfoLog(fragment_shader, INFOLOG_LEN, NULL, infoLog);
         printf("ERROR::SHADER::FRAGMENT::COMPILATION_FAILED\n%s\n", infoLog);
     }
@@ -329,10 +347,10 @@ GLint loadShaderProgram(const char *vertex_shader_source, const char *fragment_s
     glAttachShader(shader_program, fragment_shader);
     glLinkProgram(shader_program);
     glGetProgramiv(shader_program, GL_LINK_STATUS, &success);
-    if (!success) {
+    if (!success) 
+    {
         glGetProgramInfoLog(shader_program, INFOLOG_LEN, NULL, infoLog);
         printf("ERROR::SHADER::PROGRAM::LINKING_FAILED\n%s\n", infoLog);
-
     }
 
     glDeleteShader(vertex_shader);
@@ -348,11 +366,15 @@ void loadShader(void)
 
     /* Get the vertex attribute and color uniform locations */
     aVertexLoc = glGetAttribLocation(shaderProgram, "aPosition");
-    aTexCoordsLoc = glGetAttribLocation(shaderProgram, "aTexCoords");
-    aNormalLoc = glGetAttribLocation(shaderProgram, "aNormals");
+    aTexCoordsLoc = glGetAttribLocation(shaderProgram, "aTexCoord");
+    aNormalLoc = glGetAttribLocation(shaderProgram, "aNormal");
+
     uTextureColorLoc = glGetUniformLocation(shaderProgram, "uTextureColor");
     uMVPLoc = glGetUniformLocation(shaderProgram, "uMVP");
     uLightPosLoc = glGetUniformLocation(shaderProgram, "uLightPos");
+    uAmbientLightLoc = glGetUniformLocation(shaderProgram, "uAmbientLight");
+    uViewPositionLoc = glGetUniformLocation(shaderProgram, "uViewPosition");
+    uSpecularStrengthLoc = glGetUniformLocation(shaderProgram, "uSpecularStrength");
 
     /* Use program */
     glUseProgram(shaderProgram);
@@ -428,6 +450,7 @@ void updateModelViewProjMatrix(void)
 
     /* Load modelview matrix */
     glUniformMatrix4fv(uMVPLoc, 1, 0, modelViewProjMatrix);
+
 }
 
 
@@ -467,6 +490,12 @@ void initGL(void)
 
     /* Load spotligt position */
     glUniform3fv(uLightPosLoc, 1, (GLfloat*)&lightPosition);
+
+    /* Load ambient light value */
+    glUniform1f(uAmbientLightLoc, DEFAULT_AMBIENT);
+
+    /* Load specular strength */
+    glUniform1f(uSpecularStrengthLoc, DEFAULT_SPECULAR);
 }
 
 
@@ -479,6 +508,9 @@ void updateCameraPosition(void)
 
     /* Update model view projection matrix */
     updateModelViewProjMatrix();
+
+    /* Load camera target */
+    glUniformMatrix3fv(uViewPositionLoc, 1, 0, (GLfloat *)&cameraTarget);
 }
 
 
@@ -529,9 +561,9 @@ GLboolean loadMtlFile(object_t *object, material_t *materials, char *mtlFilename
 {
     GLuint i;
     FILE *pFile;
-    char *token;
-    char *lineString;
-    char line[STRLEN];
+    GLboolean endOfEntry = GL_FALSE;
+    GLuint entry, newmtl, cr, lf, map_Kd, blank, matEntry;
+    char *token, *lineString, line[STRLEN];
 
     pFile = fopen(mtlFilename, "rb");
     if (pFile == NULL)
@@ -543,10 +575,8 @@ GLboolean loadMtlFile(object_t *object, material_t *materials, char *mtlFilename
     /* Get the line entry */
     while(fgets(line, STRLEN, pFile) != NULL)
     {
-        GLuint newmtl = (strncmp(line, "newmtl ", 7) == 0) ? NEWMTL : 0;
-        GLuint mapKd  = (strncmp(line, "map_Kd ", 7) == 0) ? MAP_KD : 0;
-
-        GLuint entry = newmtl | mapKd;
+        newmtl = (strncmp(line, "newmtl ", 7) == 0) ? NEWMTL : 0;
+        entry = newmtl;
 
         /* Parse the line */
         token = strtok_r(line, " ", &lineString);
@@ -561,18 +591,33 @@ GLboolean loadMtlFile(object_t *object, material_t *materials, char *mtlFilename
                         /* Check if newmtl matches one of the names in the material list */                        
                         if( 0 == strncmp(materials[i].name, token, strlen(materials[i].name)))
                         {
-                            /* TODO This needs to be reworked to get all of the material properties */
+                            endOfEntry = GL_FALSE;
+
                             /* If so, cycle through each entry until a blank line is found */
-                            while(fgets(line, STRLEN, pFile) != NULL )
+                            while(fgets(line, STRLEN, pFile) != NULL && !endOfEntry)
                             {
-                                if ( 0 == strncmp(line, "map_Kd ", 7))
-                                { 
-                                    GLubyte cr = (strstr(line, "\r") == 0) ? 0 : 1;
-                                    GLubyte lf = (strstr(line, "\n") == 0) ? 0 : 1;
-                                    materials[i].fileName = (char *)malloc(sizeof(GLbyte) * (strlen(line)-7) );
-                                    memset(materials[i].fileName, 0, sizeof(GLbyte)*(strlen(line)-7));
-                                    strncpy(materials[i].fileName, line+7, (strlen(line)-7-cr-lf));
-                                    break;
+                                cr = (strstr(line, "\r") == 0) ? 0 : 1;
+                                lf = (strstr(line, "\n") == 0) ? 0 : 1;
+                                
+                                map_Kd = (strncmp(line, "map_Kd ", 7) == 0) ? MAP_KD : 0;
+                                blank  = (strncmp(line, "", strlen(line)-cr-lf) == 0) ? BLANK : 0;
+
+                                matEntry = map_Kd | blank;
+
+                                switch(matEntry)
+                                {
+                                    case MAP_KD:
+                                        materials[i].fileName = (char *)malloc(sizeof(GLbyte) * (strlen(line)-7) );
+                                        memset(materials[i].fileName, 0, sizeof(GLbyte)*(strlen(line)-7));
+                                        strncpy(materials[i].fileName, line+7, (strlen(line)-7-cr-lf));
+                                        break;
+
+                                    case BLANK:
+                                        endOfEntry = GL_TRUE;
+                                        break;
+
+                                    default:
+                                        break;
                                 }
                             }
                         }
@@ -602,7 +647,7 @@ GLboolean loadObjFile(object_t *object, material_t *materials, char *objFilename
     char *token, *subToken, *lineString, *entryString;
     FILE *pFile = NULL;
     GLboolean haveTexture = GL_FALSE;
-    GLubyte cr, lf;
+    GLuint cr, lf;
     GLuint i, v, vt, vn, f, usemtl, mtllib;
 
     /* Open object file */
@@ -744,9 +789,6 @@ void drawVertices(object_t *object, material_t *materials)
     glBindTexture(GL_TEXTURE_2D, object->materialChange[i].material->texId);
     faceCount = (object->numOfFaces - object->materialChange[i].startFace+1);
     glDrawArrays(GL_TRIANGLES, object->materialChange[i].startFace*ELEMENTS_PER_FACE, faceCount*ELEMENTS_PER_FACE);
-
-
-
 }
 
 
@@ -785,8 +827,8 @@ void prepareObjectArrays(object_t *object)
         if(object->numOfNormals != 0)
         {
             vn1 = faces[(stride*i)+2]-1;
-            vn2 = faces[(stride*i)+5+offset]-1;
-            vn3 = faces[(stride*i)+8+(offset*2)]-1;
+            vn2 = faces[(stride*i)+5]-1;
+            vn3 = faces[(stride*i)+8]-1;
         }
 
         object->vertArray[vc++] = vertices[v1].x;
@@ -880,7 +922,7 @@ char* getPath(char *argv)
 GLboolean loadModel(object_t *object, material_t *materials, char *objFileName)
 {
     GLint i;
-    GLubyte cr, lf;
+    GLuint cr, lf;
     char *mtlFile;
 
     /* Load and parse obj file */
@@ -938,6 +980,7 @@ GLboolean loadModel(object_t *object, material_t *materials, char *objFileName)
 
     return GL_TRUE;
 }
+
 
 void prepareVbos(object_t *object)
 {
