@@ -6,6 +6,5 @@ Ka 1 1 1
 Kd 1 1 1
 Ks 1 1 1
 Ns 1000
-map_Kd samples/harley-quinn/textures/harley-quinn_0.bmp
-
+map_Kd textures/harley-quinn_0.bmp
 

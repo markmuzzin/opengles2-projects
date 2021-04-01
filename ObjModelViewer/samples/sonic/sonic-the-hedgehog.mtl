@@ -9,7 +9,7 @@ Ks 0.010000 0.010000 0.010000
 Ni 1.000000
 d 1.000000
 illum 2
-map_Kd samples/sonic/textures/64124be4.bmp
+map_Kd textures/64124be4.bmp
 
 newmtl bab97353_dds
 Ns 96.078431
@@ -19,7 +19,7 @@ Ks 0.010000 0.010000 0.010000
 Ni 1.000000
 d 1.000000
 illum 2
-map_Kd samples/sonic/textures/bab97353.bmp
+map_Kd textures/bab97353.bmp
 
 newmtl d1419efe_dds
 Ns 96.078431
@@ -29,7 +29,7 @@ Ks 0.010000 0.010000 0.010000
 Ni 1.000000
 d 1.000000
 illum 2
-map_Kd samples/sonic/textures/d1419efe.bmp
+map_Kd textures/d1419efe.bmp
 
 newmtl f1f6d3cb_dds
 Ns 96.078431
@@ -39,4 +39,4 @@ Ks 0.010000 0.010000 0.010000
 Ni 1.000000
 d 1.000000
 illum 2
-map_Kd samples/sonic/textures/f1f6d3cb.bmp
+map_Kd textures/f1f6d3cb.bmp

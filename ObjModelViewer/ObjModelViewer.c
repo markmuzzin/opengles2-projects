@@ -384,12 +384,17 @@ void loadShader(void)
 }
 
 
-GLboolean loadTexture(material_t *materials)
+GLboolean loadTexture(material_t *materials, char *path)
 {
     GLubyte *data = NULL;
     FILE *pFile = NULL;
+    char *fullPath;
+    
+    fullPath = malloc(strlen(path) + strlen(materials->fileName));
+    strcpy(fullPath, path);
+    strcat(fullPath, materials->fileName);
 
-    pFile = fopen(materials->fileName, "rb");
+    pFile = fopen(fullPath, "rb");
     if (pFile == NULL)
     {
        printf("Error opening TEX file\n");
@@ -423,6 +428,7 @@ GLboolean loadTexture(material_t *materials)
 
     /* Free data */
     free(data);
+    free(fullPath);
 
     return GL_TRUE;
 }
@@ -541,29 +547,41 @@ void checkUserInput(void)
 }
 
 
-void addFloatData(GLfloat **buffer, char *data, GLuint *numOfData)
+
+void addFloatData(GLfloat **buffer, GLfloat *data, GLuint *numOfData, GLuint count)
 {
-    *buffer = (GLfloat *)realloc(*buffer, ((*numOfData)+1) * sizeof(GLfloat));
-    *(*buffer+(*numOfData)) = atof(data);
-    (*numOfData)++;
+    GLuint i;
+    for(i=0;i<count;i++)
+    {
+        *buffer = (GLfloat *)realloc(*buffer, ((*numOfData)+1) * sizeof(GLfloat));
+        *(*buffer+(*numOfData)) = *(data+i);
+        (*numOfData)++;
+    }
 }
 
 
-void addIntegerData(GLuint **buffer, char *data, GLuint *numOfData)
+void addIntegerData(GLuint **buffer, GLint *data, GLuint *numOfData, GLuint count)
 {
-    *buffer = (GLuint *)realloc(*buffer, ((*numOfData)+1) * sizeof(GLuint));
-    *(*buffer+(*numOfData)) = atoi(data);
-    (*numOfData)++;
+    GLuint i;
+    
+    for(i=0;i<count;i++)
+    {
+        *buffer = (GLuint *)realloc(*buffer, ((*numOfData)+1) * sizeof(GLuint));
+        *(*buffer+(*numOfData)) = *(data+i);
+        (*numOfData)++;
+    }
 }
 
 
 GLboolean loadMtlFile(object_t *object, material_t *materials, char *mtlFilename)
 {
-    GLuint i;
+ 	char line[STRLEN];
+    char stringName[STRLEN];
+    char keyword[STRLEN];
     FILE *pFile;
+    GLuint i;
     GLboolean endOfEntry = GL_FALSE;
-    GLuint entry, newmtl, cr, lf, map_Kd, blank, matEntry;
-    char *token, *lineString, line[STRLEN];
+    GLuint entry, newmtl, map_Kd, matEntry;
 
     pFile = fopen(mtlFilename, "rb");
     if (pFile == NULL)
@@ -575,62 +593,49 @@ GLboolean loadMtlFile(object_t *object, material_t *materials, char *mtlFilename
     /* Get the line entry */
     while(fgets(line, STRLEN, pFile) != NULL)
     {
-        newmtl = (strncmp(line, "newmtl ", 7) == 0) ? NEWMTL : 0;
+        newmtl = (strstr(line, "newmtl ") != NULL) ? NEWMTL : 0;
+
         entry = newmtl;
 
-        /* Parse the line */
-        token = strtok_r(line, " ", &lineString);
-
-        while ((token = strtok_r(NULL, " ", &lineString)) != NULL)
+        switch(entry)
         {
-            switch (entry)
-            {
-                case NEWMTL:
-                    for(i=0;i<object->materialCount;i++)
+            case NEWMTL:
+
+                endOfEntry = GL_FALSE;
+                sscanf(line, "%s %s", keyword, stringName);
+
+                for(i=0;i<object->materialCount && !endOfEntry;i++)
+                {
+                    /* Check if newmtl matches one of the names in the material list */                        
+                    if( 0 == strcmp(materials[i].name, stringName) )
                     {
-                        /* Check if newmtl matches one of the names in the material list */                        
-                        if( 0 == strncmp(materials[i].name, token, strlen(materials[i].name)))
+                        /* If so, cycle through each entry until a blank line is found */
+                        while(fgets(line, STRLEN, pFile) != NULL && !endOfEntry)
                         {
-                            endOfEntry = GL_FALSE;
+                            map_Kd = (strstr(line, "map_Kd ") != NULL) ? MAP_KD : 0;
 
-                            /* If so, cycle through each entry until a blank line is found */
-                            while(fgets(line, STRLEN, pFile) != NULL && !endOfEntry)
+                            matEntry = map_Kd;
+
+                            switch(matEntry)
                             {
-                                cr = (strstr(line, "\r") == 0) ? 0 : 1;
-                                lf = (strstr(line, "\n") == 0) ? 0 : 1;
-                                
-                                map_Kd = (strncmp(line, "map_Kd ", 7) == 0) ? MAP_KD : 0;
-                                blank  = (strncmp(line, "", strlen(line)-cr-lf) == 0) ? BLANK : 0;
+                                case MAP_KD:
+                                    sscanf(line, "%s %s", keyword, stringName);
+                                    materials[i].fileName = (char *)malloc(strlen(stringName));
+                                    strcpy(materials[i].fileName, stringName);
+                                    endOfEntry = GL_TRUE;
+                                    break;
 
-                                matEntry = map_Kd | blank;
-
-                                switch(matEntry)
-                                {
-                                    case MAP_KD:
-                                        materials[i].fileName = (char *)malloc(sizeof(GLbyte) * (strlen(line)-7) );
-                                        memset(materials[i].fileName, 0, sizeof(GLbyte)*(strlen(line)-7));
-                                        strncpy(materials[i].fileName, line+7, (strlen(line)-7-cr-lf));
-                                        break;
-
-                                    case BLANK:
-                                        endOfEntry = GL_TRUE;
-                                        break;
-
-                                    default:
-                                        break;
-                                }
+                                default:
+                                    break;
                             }
                         }
                     }
-                    break;
+                }
+                
+                break;
 
-                case MAP_KD:
-                    /* Get the material file associated with name */ 
-                    break;
-
-                default:
-                    break;
-            }
+            default:
+                break;
         }
     }
 
@@ -643,11 +648,14 @@ GLboolean loadMtlFile(object_t *object, material_t *materials, char *mtlFilename
 
 GLboolean loadObjFile(object_t *object, material_t *materials, char *objFilename)
 {
+    char prefix[STRLEN];
  	char line[STRLEN];
-    char *token, *subToken, *lineString, *entryString;
+    char stringName[STRLEN];
+    char keyword[STRLEN];
+    GLfloat value[3];
+    GLint indices[9];
     FILE *pFile = NULL;
     GLboolean haveTexture = GL_FALSE;
-    GLuint cr, lf;
     GLuint i, v, vt, vn, f, usemtl, mtllib;
 
     /* Open object file */
@@ -662,100 +670,106 @@ GLboolean loadObjFile(object_t *object, material_t *materials, char *objFilename
     /* Get the line entry */
     while(fgets(line, STRLEN, pFile) != NULL)
     {
-        v       = (strncmp(line, "v ",      2) == 0) ? V      : 0;
-        vt      = (strncmp(line, "vt ",     3) == 0) ? VT     : 0;
-        vn      = (strncmp(line, "vn ",     3) == 0) ? VN     : 0;
-        f       = (strncmp(line, "f ",      2) == 0) ? F      : 0;
-        usemtl  = (strncmp(line, "usemtl ", 7) == 0) ? USEMTL : 0;
-        mtllib  = (strncmp(line, "mtllib ", 7) == 0) ? MTLLIB : 0;
+        v       = (strstr(line, "v "     ) != NULL) ? V      : 0;
+        vt      = (strstr(line, "vt "    ) != NULL) ? VT     : 0;
+        vn      = (strstr(line, "vn "    ) != NULL) ? VN     : 0;
+        f       = (strstr(line, "f "     ) != NULL) ? F      : 0;
+        usemtl  = (strstr(line, "usemtl ") != NULL) ? USEMTL : 0;
+        mtllib  = (strstr(line, "mtllib ") != NULL) ? MTLLIB : 0;
 
         GLuint entry = v | vt | vn | f | usemtl | mtllib;
 
-        token = strtok_r(line, " ", &lineString);
-                    
-        while ((token = strtok_r(NULL, " ", &lineString)) != NULL )
-        {   
-            switch (entry)
-            {
-                case MTLLIB:
-                    object->materialLibFilename = (char *)malloc(sizeof(GLbyte)*strlen(token));
-                    memset(object->materialLibFilename , 0, sizeof(GLbyte)*strlen(token));
-                    strncpy(object->materialLibFilename, token, strlen(token)-cr-lf);
-                    break;
+        switch(entry)
+        {
+            case V:
+                sscanf(line, "%s %f %f %f", prefix, &value[0], &value[1], &value[2]);
+                addFloatData(&object->v, value, &object->numOfVertices, 3); 
+                break;
+        
+            case VT:
+                sscanf(line, "%s %f %f", prefix, &value[0], &value[1]);
+                addFloatData(&object->vt, value, &object->numOfTexCoords, 2); 
+                break;
 
-                case V:
-                    addFloatData(&object->v, token, &object->numOfVertices); 
-                    break;
+            case VN:
+                sscanf(line, "%s %f %f %f", prefix, &value[0], &value[1], &value[2]);
+                addFloatData(&object->vn, value, &object->numOfNormals, 3); 
+                break;
 
-                case VT:
-                    addFloatData(&object->vt, token, &object->numOfTexCoords); 
-                    break;
+            case F:
+                if(object->numOfNormals == 0)
+                {
+                    sscanf(line, "%s %d/%d %d/%d %d/%d", prefix, 
+                                    &indices[0], &indices[1],
+                                    &indices[2], &indices[3],
+                                    &indices[4], &indices[5]);
 
-                case VN:
-                    addFloatData(&object->vn, token, &object->numOfNormals); 
-                    break;
+                    addIntegerData(&object->f, indices, &object->numOfFaces, 6);
+                }
+                else
+                {
+                    sscanf(line, "%s %d/%d/%d %d/%d/%d %d/%d/%d", prefix, 
+                                    &indices[0], &indices[1], &indices[2],
+                                    &indices[3], &indices[4], &indices[5],
+                                    &indices[6], &indices[7], &indices[8]);
+                    addIntegerData(&object->f, indices, &object->numOfFaces, 9);
+                }
+                break;
 
-                case F:
-                    while(token != NULL) 
+            case USEMTL:
+                /* Reset flag */
+                haveTexture = GL_FALSE;
+
+                sscanf(line, "%s %s", keyword, stringName);
+
+                /* Check if we have this texture */
+                for(i=0;i<object->materialCount;i++)
+                {
+                    if(0 == strncmp(materials[i].name, stringName, strlen(materials[i].name))) 
                     {
-                        subToken = strtok_r(token, "/", &entryString);
-
-                        while (subToken != NULL) 
-                        {
-                            addIntegerData(&object->f, subToken, &object->numOfFaces); 
-                            subToken = strtok_r(NULL, "/", &entryString);
-                        }
-
-                        token = strtok_r(NULL, " ", &entryString);
-                    }
-                    break;
-
-                case USEMTL:
-                    /* Reset flag */
-                    haveTexture = GL_FALSE;
-
-                    /* Check if we have this texture */
-                    for(i=0;i<object->materialCount;i++)
-                    {
-                        if(0 == strncmp(materials[i].name, token, strlen(materials[i].name))) 
-                        {
-                            /* We have this material already */
-                            haveTexture = GL_TRUE;
-
-                            /* Mark the start face that uses this texture */
-                            object->materialChange[object->materialChangeCount].startFace = object->numOfFaces;
-                            object->materialChange[object->materialChangeCount].startFace /= (ELEMENTS_PER_FACE*ELEMENTS_PER_VERTEX);
-                            object->materialChange[object->materialChangeCount].material = &materials[i];
-                            object->materialChangeCount++;
-                            break;
-                        }
-                    }
-
-                    /* If we dont have this texture name stored yet */
-                    if ( GL_FALSE == haveTexture ) 
-                    {
-                        cr = (strstr(token, "\r") == 0) ? 0 : 1;
-                        lf = (strstr(token, "\n") == 0) ? 0 : 1;
-
-                        /* Add material name */
-                        materials[object->materialCount].name = (char *)malloc(sizeof(GLbyte)*strlen(token));
-                        memset(materials[object->materialCount].name, 0, sizeof(GLbyte)*strlen(token));
-                        strncpy(materials[object->materialCount].name, token, strlen(token)-cr-lf);
+                        /* We have this material already */
+                        haveTexture = GL_TRUE;
 
                         /* Mark the start face that uses this texture */
                         object->materialChange[object->materialChangeCount].startFace = object->numOfFaces;
                         object->materialChange[object->materialChangeCount].startFace /= (ELEMENTS_PER_FACE*ELEMENTS_PER_VERTEX);
-                        object->materialChange[object->materialChangeCount].material = &materials[object->materialCount];
+                        object->materialChange[object->materialChangeCount].material = &materials[i];
                         object->materialChangeCount++;
-
-                        /* Increment material count */
-                        object->materialCount++;
+                        break;
                     }
-                    break;
+                }
 
-                default:  
-                    break;
-            }
+                /* If we dont have this texture name stored yet */
+                if ( GL_FALSE == haveTexture ) 
+                {
+                    /* Add material name */
+                    materials[object->materialCount].name = (char *)malloc(strlen(stringName));
+                    memset(materials[object->materialCount].name, 0, strlen(stringName));
+                    strncpy(materials[object->materialCount].name, stringName, strlen(stringName));
+
+                    /* Mark the start face that uses this texture */
+                    object->materialChange[object->materialChangeCount].startFace = object->numOfFaces;
+                    object->materialChange[object->materialChangeCount].startFace /= (ELEMENTS_PER_FACE*ELEMENTS_PER_VERTEX);
+                    object->materialChange[object->materialChangeCount].material = &materials[object->materialCount];
+                    object->materialChangeCount++;
+
+                    /* Increment material count */
+                    object->materialCount++;
+                }
+                break;
+
+            case MTLLIB:
+                sscanf(line, "%s %s", keyword, stringName);
+
+                /* Add material filename */
+                object->materialLibFilename = (char *)malloc(strlen(stringName));
+                memset(object->materialLibFilename, 0, strlen(stringName));
+                strcpy(object->materialLibFilename, stringName);
+
+                break;                
+
+            default:
+                break;
         }
     }
 
@@ -893,28 +907,16 @@ void cleanUp(object_t *object)
 }
 
 
-char* getPath(char *argv)
+char* getPath(char *string)
 {
-    char *path;
-    char *token, *lineString;
+    char *path = malloc(sizeof(char)*strlen(string));
+    GLint position = strlen(string);    
 
-    path = malloc(sizeof(char) * (strlen(argv)));
-    memset(path, 0, sizeof(char) * (strlen(argv)));
-
-    token = strtok_r(argv, "/", &lineString);
-
-    do
-    {
-        if(strstr(token, ".obj") == NULL)
-        {
-            strcat(path, token);
-            strcat(path, "/");
-        }
-
-    } while((token = strtok_r(NULL, "/", &lineString)) != NULL );
-
-    path = realloc(path, sizeof(char) * strlen(path));
-
+    while(position != 0 && string[--position] != '/');
+    
+    path = (char *)malloc(position+1);
+    strncpy(path, string, position+1);
+    
     return path;
 }
 
@@ -922,8 +924,11 @@ char* getPath(char *argv)
 GLboolean loadModel(object_t *object, material_t *materials, char *objFileName)
 {
     GLint i;
-    GLuint cr, lf;
     char *mtlFile;
+    char *path;
+
+    mtlFile = getPath(objFileName);
+    path = getPath(objFileName);
 
     /* Load and parse obj file */
     printf("Loading object file: %s...", objFileName);
@@ -936,12 +941,8 @@ GLboolean loadModel(object_t *object, material_t *materials, char *objFileName)
     printf("done\n");
 
     /* Construct material filenamd */
-    mtlFile = getPath(objFileName);
-    mtlFile = (char*)realloc(mtlFile, sizeof(char) * (strlen(mtlFile) + strlen(object->materialLibFilename)));
-
-    cr = (strstr(object->materialLibFilename, "\r") == NULL) ? 0 : 1;
-    lf = (strstr(object->materialLibFilename, "\n") == NULL) ? 0 : 1;
-    strncat(mtlFile, object->materialLibFilename, strlen(object->materialLibFilename)-cr-lf);
+    mtlFile = (char*)realloc(mtlFile, (strlen(mtlFile) + strlen(object->materialLibFilename)));
+    strncat(mtlFile, object->materialLibFilename, strlen(object->materialLibFilename));
 
     /* Load and parse material file */
     printf("Loading mtl file: %s...", mtlFile);
@@ -968,7 +969,7 @@ GLboolean loadModel(object_t *object, material_t *materials, char *objFileName)
         if(materials[i].fileName != NULL)
         {
             printf("Loading tex files: %s...", materials[i].fileName);
-            if ( GL_FALSE == loadTexture(&materials[i]) )
+            if ( GL_FALSE == loadTexture(&materials[i], path) )
             {
                 return GL_FALSE;
             }
@@ -977,6 +978,7 @@ GLboolean loadModel(object_t *object, material_t *materials, char *objFileName)
     }
 
     free(mtlFile);
+    free(path);
 
     return GL_TRUE;
 }
@@ -1044,6 +1046,7 @@ int main(int argc, char **argv)
 
     /* Prepare VBOs */
     prepareVbos(&object);
+
 
     /* Loop until we need to shutdown */
     while (!glfwWindowShouldClose(window) && appShutdown == 0) 
