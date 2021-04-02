@@ -77,8 +77,11 @@
 
 #define DEFAULT_CAM_DIST            100.0f
 #define DEFAULT_FOV                 35.0f
-#define DEFAULT_AMBIENT             0.5f
 #define DEFAULT_SPECULAR            0.5f
+#define DEFAULT_SHININESS           32.0f
+
+#define DEFAULT_AMBIENT             0.3f
+#define DEFAULT_LIGHTSRCINTENSITY   0.9f
 
 #define KEYS_UP                     65
 #define KEYS_DOWN                   'B'
@@ -169,8 +172,8 @@ static GLfloat persepctiveProjMatrix[16] = {0.0f};
 static GLfloat modelViewProjMatrix[16]   = {0.0f};
 static GLfloat rotationMatrixUp[16]      = {0};
 static GLfloat rotationMatrixRight[16]   = {0};
-static GLfloat modelRotationUp           = 14.0f;
-static GLfloat modelRotationRight        = 9.0f;
+static GLfloat modelRotationUp           = 0.0f;
+static GLfloat modelRotationRight        = 0.0f;
 
 static vec3_t cameraRight                = {0.0f, 0.0f, 0.0f};
 static vec3_t cameraDirection            = {0.0f, 0.0f, 0.0f};
@@ -189,10 +192,17 @@ static GLint aTexCoordsLoc               = -1;
 
 static GLint uTextureColorLoc            = -1;
 static GLint uMVPLoc                     = -1;
-static GLint uLightPosLoc                = -1;
-static GLint uAmbientLightLoc            = -1;
 static GLint uViewPositionLoc            = -1;
 static GLint uSpecularStrengthLoc        = -1;
+
+static GLint uShininessLoc               = -1;
+static GLint uLightPosLoc                = -1;
+static GLint uAmbientLightLoc            = -1;
+static GLint uLightSrcIntensityLoc       = -1;
+static GLint uKaLoc                      = -1;
+static GLint uKdLoc                      = -1;
+static GLint uKsLoc                      = -1;
+static GLint uDLoc                       = -1;
 
 static GLint appShutdown                 = 0;
 
@@ -227,29 +237,42 @@ static const GLchar* fragment_shader_source =
     "uniform vec3 uViewPosition;\n"
     "uniform sampler2D uTextureColor;\n"
 
+    "uniform float uShininess;\n"
     "uniform float uAmbientLight;\n"
-    "uniform float uSpecularStrength;\n"
 
-    "varying vec3 vPosition;\n"
-    "varying vec2 vTexCoord;\n"
-    "varying vec3 vNormal;\n"
+    "uniform float uLightSrcIntensity;\n"
+
+    "uniform float uKa;\n"
+    "uniform float uKs;\n"
+    "uniform float uKd;\n"
+    "uniform float uD;\n"
+
+    "varying vec3 vPosition;\n;"
+    "varying vec2 vTexCoord;\n;"
+    "varying vec3 vNormal;\n;"
 
     "void main(void)\n"
     "{\n"
+        "float Ka = clamp(uKa, -1.0, 1.0)\n;"
+        "float Ks = clamp(uKs, -1.0, 1.0)\n;"
+        "float Kd = clamp(uKd, -1.0, 1.0)\n;"
+        "float d = clamp(uD, -1.0, 1.0)\n;"
+
         "vec3 normal = normalize(vNormal);\n"
+
         "vec3 lightDirection = normalize(uLightPos - vPosition);\n"
-
-        "float diffuse = max(dot(normal, lightDirection), 0.0);\n"
-
         "vec3 viewDirection = normalize(uViewPosition - vPosition);\n"
-        "vec3 reflectDirection = reflect(-lightDirection, normal);\n" 
-        "float spec = pow(max(dot(viewDirection, reflectDirection), 0.0), 32.0);\n"
-        "float specular = uSpecularStrength * spec;\n"
+        "vec3 reflectDirection = reflect(-lightDirection, normal);\n"
 
-        "vec4 color = texture2D(uTextureColor, vTexCoord);\n"
+        "float diffuse = (Ka + uLightSrcIntensity) * Kd * max(dot(normal, lightDirection), 0.0);\n"
+        "float specular = Ks * pow(max(dot(viewDirection, reflectDirection), 0.0), uShininess);\n"
+        "vec3 dissolve = (d == 1.0) ? vec3(1.0, 1.0, 1.0) : 1.0 - (normal * vPosition) * (1.0 - d);\n"
 
-        "gl_FragColor = color.bgra * (uAmbientLight + specular + diffuse);\n"
-    "}\n"
+        "vec4 color = texture2D(uTextureColor, vTexCoord) * vec4(dissolve, 1.0);\n"
+
+        "gl_FragColor = color.bgra * (specular + diffuse + uAmbientLight);\n"
+
+   "}\n"
 };
 
 /*******************************************************************/
@@ -391,6 +414,14 @@ void loadShader(void)
     uViewPositionLoc = glGetUniformLocation(shaderProgram, "uViewPosition");
     uSpecularStrengthLoc = glGetUniformLocation(shaderProgram, "uSpecularStrength");
 
+    uKaLoc = glGetUniformLocation(shaderProgram, "uKa");
+    uKdLoc = glGetUniformLocation(shaderProgram, "uKd");
+    uKsLoc = glGetUniformLocation(shaderProgram, "uKs");
+    uDLoc = glGetUniformLocation(shaderProgram, "uD");
+
+    uLightSrcIntensityLoc = glGetUniformLocation(shaderProgram, "uLightSrcIntensity");
+
+
     /* Use program */
     glUseProgram(shaderProgram);
 
@@ -491,7 +522,7 @@ void initGL(void)
     glDepthRangef(0.0f, 1.0f);
 
     /* Set clear color */
-    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+    glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
 
     /* Set viewport */
     glViewport(0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT);
@@ -518,6 +549,12 @@ void initGL(void)
 
     /* Load specular strength */
     glUniform1f(uSpecularStrengthLoc, DEFAULT_SPECULAR);
+
+    /* Load shineness */
+    glUniform1f(uShininessLoc, DEFAULT_SHININESS);
+
+    /* Load light source diffuse */
+    glUniform1f(uLightSrcIntensityLoc, DEFAULT_LIGHTSRCINTENSITY);
 }
 
 
@@ -595,6 +632,18 @@ GLboolean checkPrefix(char *line, char *expPrefix)
 }
 
 
+void setMaterialDefaults(material_t *material)
+{
+    material->Ns = 100.0f;
+    material->Ka = 0.0f;
+    material->Kd = 1.0;
+    material->Ks = 0.01f;
+    material->Ni = 1.0f;
+    material->d = 1.0f;
+    material->illum = 1.0f;
+}
+
+
 GLboolean loadMtlFile(object_t *object, material_t *materials, char *mtlFilename)
 {
  	char line[STRLEN];
@@ -632,6 +681,9 @@ GLboolean loadMtlFile(object_t *object, material_t *materials, char *mtlFilename
                     /* Check if newmtl matches one of the names in the material list */                        
                     if( 0 == strcmp(materials[i].name, stringName) )
                     {
+                        /* Set the default values in case the material file does not specify them */
+                        setMaterialDefaults(&materials[i]);
+
                         /* If so, cycle through each entry until a blank line is found */
                         while(!endOfEntry)
                         {
@@ -695,7 +747,6 @@ GLboolean loadMtlFile(object_t *object, material_t *materials, char *mtlFilename
                         }
                     }
                 }
-                
                 break;
 
             default:
@@ -828,7 +879,6 @@ GLboolean loadObjFile(object_t *object, material_t *materials, char *objFilename
                 object->materialLibFilename = (char *)malloc(strlen(stringName));
                 memset(object->materialLibFilename, 0, strlen(stringName));
                 strcpy(object->materialLibFilename, stringName);
-
                 break;                
 
             default:
@@ -858,7 +908,7 @@ void drawVertices(object_t *object, material_t *materials)
     for(i=0;i<object->materialChangeCount;i++)
     {
         /* Calculate the end face for this material */
-        endFace = (i < object->materialChangeCount - 1) ? object->materialChange[i+1].startFace : object->numOfFaces + 1;
+        endFace = (i < object->materialChangeCount - 1) ? object->materialChange[i+1].startFace : object->numOfFaces+1;
 
         /* If a texture is specified, bind it */
         if(object->materialChange[i].material->texId != -1)
@@ -866,8 +916,25 @@ void drawVertices(object_t *object, material_t *materials)
             glBindTexture(GL_TEXTURE_2D, object->materialChange[i].material->texId);
         }
 
+        /* Apply material parameters */
+        glUniform1f(uKaLoc, object->materialChange[i].material->Ka);
+        glUniform1f(uKdLoc, object->materialChange[i].material->Kd);
+        glUniform1f(uKsLoc, object->materialChange[i].material->Ks);
+        glUniform1f(uDLoc, object->materialChange[i].material->d);
+
+        /* Check dissolve factor */
+        if (object->materialChange[i].material->d != 1.0f) 
+        {
+            glEnable(GL_BLEND);
+            glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+        }
+        else
+        {
+            glDisable(GL_BLEND);
+        }
+
         /* Calculate the face count for this material */
-        faceCount = (endFace - object->materialChange[i].startFace+1);
+        faceCount = (endFace - object->materialChange[i].startFace);
 
         /* Draw faces */
         glDrawArrays(GL_TRIANGLES, object->materialChange[i].startFace*ELEMENTS_PER_FACE, faceCount*ELEMENTS_PER_FACE);
@@ -981,11 +1048,11 @@ char* getPath(char *string)
     GLint position = strlen(string);    
 
     while(position != 0 && string[--position] != '/');
-    
-    path = (char *)malloc(position+1);
-    memset(path, 0, position+1);
+
+    path = (char *)malloc(position+2);
+    memset(path, 0, position+2);
     strncpy(path, string, position+1);
-    
+
     return path;
 }
 
