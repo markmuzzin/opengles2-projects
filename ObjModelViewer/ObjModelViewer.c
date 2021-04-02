@@ -44,6 +44,11 @@
 #define MTLLIB                      (1<<14)
 #define BLANK                       (1<<15)
 
+#define LIGHTPOS                    (1<<16)
+#define CAMPOS                      (1<<17)
+#define CAMFRONT                    (1<<18)
+#define CAMUP                       (1<<19)
+
 #define ELEMENTS_PER_FACE           3
 #define ELEMENTS_PER_VERTEX         3
 #define ELEMENTS_PER_TEXCOORDS      2
@@ -183,7 +188,7 @@ static vec3_t cameraPosition             = {0.0f, 0.0f, DEFAULT_CAM_DIST};
 static vec3_t cameraFront                = {0.0f, 0.0f, -1.0f};
 static vec3_t cameraUp                   = {0.0f, 1.0f,  0.0f};
 
-static vec3_t lightPosition              = {10.0f, 15.0f, 30.0f};
+static vec3_t lightPosition              = {0.0f, 200.0f, 0.0f};
 
 static GLint shaderProgram               = -1;
 static GLint aVertexLoc                  = -1;
@@ -771,6 +776,7 @@ GLboolean loadObjFile(object_t *object, material_t *materials, char *objFilename
     FILE *pFile = NULL;
     GLboolean haveTexture = GL_FALSE;
     GLuint i, v, vt, vn, f, usemtl, mtllib;
+    GLuint entry, lightpos, campos, camup, camfront;
 
     /* Open object file */
     pFile = fopen(objFilename, "r");
@@ -784,14 +790,18 @@ GLboolean loadObjFile(object_t *object, material_t *materials, char *objFilename
     /* Get the line entry */
     while(fgets(line, STRLEN, pFile) != NULL)
     {
-        v       = checkPrefix(line, "v "     ) ? V      : 0;
-        vt      = checkPrefix(line, "vt "    ) ? VT     : 0;
-        vn      = checkPrefix(line, "vn "    ) ? VN     : 0;
-        f       = checkPrefix(line, "f "     ) ? F      : 0;
-        usemtl  = checkPrefix(line, "usemtl ") ? USEMTL : 0;
-        mtllib  = checkPrefix(line, "mtllib ") ? MTLLIB : 0;
-
-        GLuint entry = v | vt | vn | f | usemtl | mtllib;
+        v        = checkPrefix(line, "v "       ) ? V        : 0;
+        vt       = checkPrefix(line, "vt "      ) ? VT       : 0;
+        vn       = checkPrefix(line, "vn "      ) ? VN       : 0;
+        f        = checkPrefix(line, "f "       ) ? F        : 0;
+        usemtl   = checkPrefix(line, "usemtl "  ) ? USEMTL   : 0;
+        mtllib   = checkPrefix(line, "mtllib "  ) ? MTLLIB   : 0;
+        lightpos = checkPrefix(line, "lightpos ") ? LIGHTPOS : 0;
+        campos   = checkPrefix(line, "campos "  ) ? CAMPOS   : 0;
+        camup    = checkPrefix(line, "camup "   ) ? CAMUP    : 0;
+        camfront = checkPrefix(line, "camfront ") ? CAMFRONT : 0;
+        
+        entry = v | vt | vn | f | usemtl | mtllib | campos | lightpos | camfront | camup;
 
         switch(entry)
         {
@@ -879,7 +889,38 @@ GLboolean loadObjFile(object_t *object, material_t *materials, char *objFilename
                 object->materialLibFilename = (char *)malloc(strlen(stringName));
                 memset(object->materialLibFilename, 0, strlen(stringName));
                 strcpy(object->materialLibFilename, stringName);
-                break;                
+                break;
+
+            case LIGHTPOS:
+                sscanf(line, "%s %f %f %f", prefix, &value[0], &value[1], &value[2]);
+                lightPosition.x = value[0];
+                lightPosition.y = value[1];
+                lightPosition.z = value[2];
+
+                /* Load spotligt position */
+                glUniform3fv(uLightPosLoc, 1, (GLfloat*)&lightPosition);
+                break;
+
+            case CAMPOS:
+                sscanf(line, "%s %f %f %f", prefix, &value[0], &value[1], &value[2]);
+                cameraPosition.x = value[0];
+                cameraPosition.y = value[1];
+                cameraPosition.z = value[2];
+                break;      
+
+            case CAMFRONT:
+                sscanf(line, "%s %f %f %f", prefix, &value[0], &value[1], &value[2]);
+                cameraFront.x = value[0];
+                cameraFront.y = value[1];
+                cameraFront.z = value[2];
+                break;      
+
+            case CAMUP:
+                sscanf(line, "%s %f %f %f", prefix, &value[0], &value[1], &value[2]);
+                cameraUp.x = value[0];
+                cameraUp.y = value[1];
+                cameraUp.z = value[2];
+                break;      
 
             default:
                 break;
@@ -908,7 +949,7 @@ void drawVertices(object_t *object, material_t *materials)
     for(i=0;i<object->materialChangeCount;i++)
     {
         /* Calculate the end face for this material */
-        endFace = (i < object->materialChangeCount - 1) ? object->materialChange[i+1].startFace : object->numOfFaces+1;
+        endFace = (i < object->materialChangeCount - 1) ? object->materialChange[i+1].startFace : object->numOfFaces;
 
         /* If a texture is specified, bind it */
         if(object->materialChange[i].material->texId != -1)
@@ -1167,9 +1208,6 @@ int main(int argc, char **argv)
         cameraPosition.z = atof(argv[2]);
     }
 
-    /* GL initialization */
-    initGL();
-
     /* Load model */
     if ( GL_FALSE == loadModel(&object, materials, argv[1]) )
     {
@@ -1177,12 +1215,14 @@ int main(int argc, char **argv)
         return -1;
     }
 
+    /* GL initialization */
+    initGL();
+
     /* Prepare vertex and texture arrays */
     prepareObjectArrays(&object);
 
     /* Prepare VBOs */
     prepareVbos(&object);
-
 
     /* Loop until we need to shutdown */
     while (!glfwWindowShouldClose(window) && appShutdown == 0) 

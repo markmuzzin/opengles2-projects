@@ -1,5 +1,11 @@
 # Blender v2.74 (sub 0) OBJ File: ''
 # www.blender.org
+
+campos 0.0 0.0 100.0
+camfront 0.0 0.15 -1.0
+camup 0.0 1.0 0.0
+lightpos 0.0 200.0 200.0
+
 mtllib sonic-the-hedgehog.mtl
 o DrawCall_0267
 v 0.390475 10.354038 1.611984

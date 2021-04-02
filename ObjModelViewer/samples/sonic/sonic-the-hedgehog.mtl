@@ -1,6 +1,9 @@
 # Blender MTL File: 'None'
 # Material Count: 4
 
+campos 0.0 0.0 -1.0
+lightpos 0.0 200.0 200.0
+
 newmtl 64124be4_dds
 Ns 96.078431
 Ka 0.000000 0.000000 0.000000

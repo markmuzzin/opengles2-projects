@@ -1,5 +1,9 @@
 # Blender v2.74 (sub 0) OBJ File: ''
 # www.blender.org
+
+campos 0.0 0.0 10.0
+lightpos 0.0 200.0 0.0
+ 
 mtllib plane.mtl
 o null
 v 1.294976 -0.028125 -3.783419
