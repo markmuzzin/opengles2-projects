@@ -29,11 +29,20 @@
 #define VT                          (1<<1)
 #define VN                          (1<<2)
 #define F                           (1<<3)
-#define USEMTL                      (1<<4)
-#define NEWMTL                      (1<<5)
-#define MAP_KD                      (1<<6)
-#define MTLLIB                      (1<<7)
-#define BLANK                       (1<<8)
+
+#define NS                          (1<<4)
+#define KA                          (1<<5)
+#define KD                          (1<<6)
+#define KS                          (1<<7)
+#define NI                          (1<<8)
+#define D                           (1<<9)
+#define ILLUM                       (1<<10)
+#define MAP_KD                      (1<<11)
+
+#define USEMTL                      (1<<12)
+#define NEWMTL                      (1<<13)
+#define MTLLIB                      (1<<14)
+#define BLANK                       (1<<15)
 
 #define ELEMENTS_PER_FACE           3
 #define ELEMENTS_PER_VERTEX         3
@@ -53,8 +62,6 @@
 #define BMP_PIX_PER_COL             3
 #define BMP_HEADER_SIZE             54
 
-#define DEFAULT_CAM_DIST            100.0f
-
 #define SCENE_NEAR                  0.1f
 #define SCENE_FAR                   20000.0f
 #define SCENE_RIGHT                 DISPLAY_WIDTH
@@ -65,10 +72,11 @@
 #define MOVE                        10.0f
 #define MOVE_BIG                    50.0f
 
-#define DEFAULT_FOV                 35.0f
-
 #define MAX_MATERIALS               32
 #define MAX_MATERIAL_CHANGES        300
+
+#define DEFAULT_CAM_DIST            100.0f
+#define DEFAULT_FOV                 35.0f
 #define DEFAULT_AMBIENT             0.5f
 #define DEFAULT_SPECULAR            0.5f
 
@@ -90,6 +98,13 @@ typedef struct _material_t
     char *name;
     char *fileName;
     GLuint texId;
+    GLfloat Ns;
+    GLfloat Ka;
+    GLfloat Kd;
+    GLfloat Ks;
+    GLfloat Ni;
+    GLfloat d;
+    GLfloat illum;
 } material_t;
 
 typedef struct _material_change_t
@@ -391,6 +406,7 @@ GLboolean loadTexture(material_t *materials, char *path)
     char *fullPath;
     
     fullPath = malloc(strlen(path) + strlen(materials->fileName));
+    memset(fullPath, 0, strlen(path) + strlen(materials->fileName));
     strcpy(fullPath, path);
     strcat(fullPath, materials->fileName);
 
@@ -573,6 +589,12 @@ void addIntegerData(GLuint **buffer, GLint *data, GLuint *numOfData, GLuint coun
 }
 
 
+GLboolean checkPrefix(char *line, char *expPrefix)
+{
+    return (strncmp(line, expPrefix, strlen(expPrefix)) == 0) ? GL_TRUE : GL_FALSE;
+}
+
+
 GLboolean loadMtlFile(object_t *object, material_t *materials, char *mtlFilename)
 {
  	char line[STRLEN];
@@ -582,6 +604,7 @@ GLboolean loadMtlFile(object_t *object, material_t *materials, char *mtlFilename
     GLuint i;
     GLboolean endOfEntry = GL_FALSE;
     GLuint entry, newmtl, map_Kd, matEntry;
+    GLuint ns, ka, kd, ks, ni, d, blank; 
 
     pFile = fopen(mtlFilename, "rb");
     if (pFile == NULL)
@@ -593,7 +616,7 @@ GLboolean loadMtlFile(object_t *object, material_t *materials, char *mtlFilename
     /* Get the line entry */
     while(fgets(line, STRLEN, pFile) != NULL)
     {
-        newmtl = (strstr(line, "newmtl ") != NULL) ? NEWMTL : 0;
+        newmtl = checkPrefix(line, "newmtl ") ? NEWMTL : 0;
 
         entry = newmtl;
 
@@ -610,18 +633,59 @@ GLboolean loadMtlFile(object_t *object, material_t *materials, char *mtlFilename
                     if( 0 == strcmp(materials[i].name, stringName) )
                     {
                         /* If so, cycle through each entry until a blank line is found */
-                        while(fgets(line, STRLEN, pFile) != NULL && !endOfEntry)
+                        while(!endOfEntry)
                         {
-                            map_Kd = (strstr(line, "map_Kd ") != NULL) ? MAP_KD : 0;
+                            memset(line, 0, STRLEN);
+                            fgets(line, STRLEN, pFile);
 
-                            matEntry = map_Kd;
+                            ns     = checkPrefix(line,     "Ns ") ? NS : 0;
+                            ka     = checkPrefix(line,     "Ka ") ? KA : 0;
+                            kd     = checkPrefix(line,     "Kd ") ? KD : 0;
+                            ks     = checkPrefix(line,     "Ks ") ? KS : 0;
+                            ni     = checkPrefix(line,     "Ni ") ? NI : 0;
+                            d      = checkPrefix(line,      "d ") ? D  : 0;
+                            map_Kd = checkPrefix(line, "map_Kd ") ? MAP_KD : 0;
+                            blank  = strlen(line) <= 2 ? BLANK : 0;
+
+                            matEntry = map_Kd | ns | ka | kd | ks | ni | d | blank;
 
                             switch(matEntry)
                             {
+                                case NS: 
+                                    sscanf(line, "%s %f", keyword, &materials[i].Ns);
+                                    break;
+
+                                case KA:
+                                    sscanf(line, "%s %f", keyword, &materials[i].Ka);
+                                    break;
+
+                                case KD:
+                                    sscanf(line, "%s %f", keyword, &materials[i].Kd);
+                                    break;
+
+                                case KS:
+                                    sscanf(line, "%s %f", keyword, &materials[i].Ks);
+                                    break;
+
+                                case NI:
+                                    sscanf(line, "%s %f", keyword, &materials[i].Ni);
+                                    break;
+
+                                case D:
+                                    sscanf(line, "%s %f", keyword, &materials[i].d);
+                                    break;
+
+                                case ILLUM:
+                                    sscanf(line, "%s %f", keyword, &materials[i].illum);
+                                    break;
+
                                 case MAP_KD:
                                     sscanf(line, "%s %s", keyword, stringName);
                                     materials[i].fileName = (char *)malloc(strlen(stringName));
-                                    strcpy(materials[i].fileName, stringName);
+                                    strcpy(materials[i].fileName, stringName);                                    
+                                    break;
+                                
+                                case BLANK:
                                     endOfEntry = GL_TRUE;
                                     break;
 
@@ -643,7 +707,6 @@ GLboolean loadMtlFile(object_t *object, material_t *materials, char *mtlFilename
 
     return GL_TRUE;
 }
-
 
 
 GLboolean loadObjFile(object_t *object, material_t *materials, char *objFilename)
@@ -670,12 +733,12 @@ GLboolean loadObjFile(object_t *object, material_t *materials, char *objFilename
     /* Get the line entry */
     while(fgets(line, STRLEN, pFile) != NULL)
     {
-        v       = (strstr(line, "v "     ) != NULL) ? V      : 0;
-        vt      = (strstr(line, "vt "    ) != NULL) ? VT     : 0;
-        vn      = (strstr(line, "vn "    ) != NULL) ? VN     : 0;
-        f       = (strstr(line, "f "     ) != NULL) ? F      : 0;
-        usemtl  = (strstr(line, "usemtl ") != NULL) ? USEMTL : 0;
-        mtllib  = (strstr(line, "mtllib ") != NULL) ? MTLLIB : 0;
+        v       = checkPrefix(line, "v "     ) ? V      : 0;
+        vt      = checkPrefix(line, "vt "    ) ? VT     : 0;
+        vn      = checkPrefix(line, "vn "    ) ? VN     : 0;
+        f       = checkPrefix(line, "f "     ) ? F      : 0;
+        usemtl  = checkPrefix(line, "usemtl ") ? USEMTL : 0;
+        mtllib  = checkPrefix(line, "mtllib ") ? MTLLIB : 0;
 
         GLuint entry = v | vt | vn | f | usemtl | mtllib;
 
@@ -725,7 +788,7 @@ GLboolean loadObjFile(object_t *object, material_t *materials, char *objFilename
                 /* Check if we have this texture */
                 for(i=0;i<object->materialCount;i++)
                 {
-                    if(0 == strncmp(materials[i].name, stringName, strlen(materials[i].name))) 
+                    if(0 == strcmp(materials[i].name, stringName)) 
                     {
                         /* We have this material already */
                         haveTexture = GL_TRUE;
@@ -745,7 +808,7 @@ GLboolean loadObjFile(object_t *object, material_t *materials, char *objFilename
                     /* Add material name */
                     materials[object->materialCount].name = (char *)malloc(strlen(stringName));
                     memset(materials[object->materialCount].name, 0, strlen(stringName));
-                    strncpy(materials[object->materialCount].name, stringName, strlen(stringName));
+                    strcpy(materials[object->materialCount].name, stringName);
 
                     /* Mark the start face that uses this texture */
                     object->materialChange[object->materialChangeCount].startFace = object->numOfFaces;
@@ -790,21 +853,26 @@ void drawVertices(object_t *object, material_t *materials)
 {
     GLint i;
     GLuint faceCount;
+    GLuint endFace;
     
-
-    for(i=0;i<object->materialChangeCount-1;i++)
+    for(i=0;i<object->materialChangeCount;i++)
     {
-        glBindTexture(GL_TEXTURE_2D, object->materialChange[i].material->texId);
-        faceCount = object->materialChange[i+1].startFace - object->materialChange[i].startFace;
+        /* Calculate the end face for this material */
+        endFace = (i < object->materialChangeCount - 1) ? object->materialChange[i+1].startFace : object->numOfFaces + 1;
 
+        /* If a texture is specified, bind it */
+        if(object->materialChange[i].material->texId != -1)
+        {
+            glBindTexture(GL_TEXTURE_2D, object->materialChange[i].material->texId);
+        }
+
+        /* Calculate the face count for this material */
+        faceCount = (endFace - object->materialChange[i].startFace+1);
+
+        /* Draw faces */
         glDrawArrays(GL_TRIANGLES, object->materialChange[i].startFace*ELEMENTS_PER_FACE, faceCount*ELEMENTS_PER_FACE);
     }
-
-    glBindTexture(GL_TEXTURE_2D, object->materialChange[i].material->texId);
-    faceCount = (object->numOfFaces - object->materialChange[i].startFace+1);
-    glDrawArrays(GL_TRIANGLES, object->materialChange[i].startFace*ELEMENTS_PER_FACE, faceCount*ELEMENTS_PER_FACE);
 }
-
 
 
 void prepareObjectArrays(object_t *object)
@@ -909,12 +977,13 @@ void cleanUp(object_t *object)
 
 char* getPath(char *string)
 {
-    char *path = malloc(sizeof(char)*strlen(string));
+    char *path = NULL;
     GLint position = strlen(string);    
 
     while(position != 0 && string[--position] != '/');
     
     path = (char *)malloc(position+1);
+    memset(path, 0, position+1);
     strncpy(path, string, position+1);
     
     return path;
