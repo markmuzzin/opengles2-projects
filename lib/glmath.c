@@ -52,7 +52,7 @@ vec3_t addProd(vec3_t v, vec3_t u)
 }
 
 
-void matrix4x4By4x4(float *src1, float *src2, float *dest)
+void matrix4x4By4x4(float *src1, GLfloat *src2, GLfloat *dest)
 {
     GLint i;
     GLfloat tmp[16];
@@ -72,7 +72,7 @@ void matrix4x4By4x4(float *src1, float *src2, float *dest)
 }
 
 
-void matrix4x4By4x1(float *src1, float *src2, float *dest)
+void matrix4x4By4x1(float *src1, GLfloat *src2, GLfloat *dest)
 {
     GLfloat tmp[4];
 

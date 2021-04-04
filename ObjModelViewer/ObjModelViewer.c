@@ -85,8 +85,8 @@
 #define DEFAULT_SPECULAR            0.5f
 #define DEFAULT_SHININESS           32.0f
 
-#define DEFAULT_AMBIENT             0.3f
-#define DEFAULT_LIGHTSRCINTENSITY   0.9f
+#define DEFAULT_AMBIENT             0.3f, 0.3f, 0.3f
+#define DEFAULT_LIGHTSRCINTENSITY   0.9f, 0.9f, 0.9f
 
 #define KEYS_UP                     65
 #define KEYS_DOWN                   'B'
@@ -107,9 +107,9 @@ typedef struct _material_t
     char *fileName;
     GLuint texId;
     GLfloat Ns;
-    GLfloat Ka;
-    GLfloat Kd;
-    GLfloat Ks;
+    vec3_t Ka;
+    vec3_t Kd;
+    vec3_t Ks;
     GLfloat Ni;
     GLfloat d;
     GLfloat illum;
@@ -243,13 +243,13 @@ static const GLchar* fragment_shader_source =
     "uniform sampler2D uTextureColor;\n"
 
     "uniform float uShininess;\n"
-    "uniform float uAmbientLight;\n"
+    "uniform vec3 uAmbientLight;\n"
 
-    "uniform float uLightSrcIntensity;\n"
+    "uniform vec3 uLightSrcIntensity;\n"
 
-    "uniform float uKa;\n"
-    "uniform float uKs;\n"
-    "uniform float uKd;\n"
+    "uniform vec3 uKa;\n"
+    "uniform vec3 uKs;\n"
+    "uniform vec3 uKd;\n"
     "uniform float uD;\n"
 
     "varying vec3 vPosition;\n;"
@@ -258,9 +258,9 @@ static const GLchar* fragment_shader_source =
 
     "void main(void)\n"
     "{\n"
-        "float Ka = clamp(uKa, -1.0, 1.0)\n;"
-        "float Ks = clamp(uKs, -1.0, 1.0)\n;"
-        "float Kd = clamp(uKd, -1.0, 1.0)\n;"
+        "vec3 Ka = clamp(uKa, -1.0, 1.0)\n;"
+        "vec3 Ks = clamp(uKs, -1.0, 1.0)\n;"
+        "vec3 Kd = clamp(uKd, -1.0, 1.0)\n;"
         "float d = clamp(uD, -1.0, 1.0)\n;"
 
         "vec3 normal = normalize(vNormal);\n"
@@ -269,13 +269,14 @@ static const GLchar* fragment_shader_source =
         "vec3 viewDirection = normalize(uViewPosition - vPosition);\n"
         "vec3 reflectDirection = reflect(-lightDirection, normal);\n"
 
-        "float diffuse = (Ka + uLightSrcIntensity) * Kd * max(dot(normal, lightDirection), 0.0);\n"
-        "float specular = Ks * pow(max(dot(viewDirection, reflectDirection), 0.0), uShininess);\n"
-        "vec3 dissolve = (d == 1.0) ? vec3(1.0, 1.0, 1.0) : 1.0 - (normal * vPosition) * (1.0 - d);\n"
+        "vec3 diffuse = (Ka + uLightSrcIntensity) * Kd * max(dot(normal, lightDirection), 0.0);\n"
+        "vec3 specular = Ks * pow(max(dot(viewDirection, reflectDirection), 0.0), uShininess);\n"
+        "vec3 dissolve_vec = (d == 1.0) ? vec3(1.0, 1.0, 1.0) : 1.0 - (normal * vPosition) * (1.0 - d);\n"
+        "float dissolve = dot(dissolve_vec, vec3(1.0, 1.0, 1.0)) / 3.0;\n"
 
-        "vec4 color = texture2D(uTextureColor, vTexCoord) * vec4(dissolve, 1.0);\n"
+        "vec4 color = texture2D(uTextureColor, vTexCoord);\n"
 
-        "gl_FragColor = color.bgra * (specular + diffuse + uAmbientLight);\n"
+        "gl_FragColor = color.bgra * vec4(diffuse + specular + uAmbientLight, uD);\n"
 
    "}\n"
 };
@@ -550,7 +551,7 @@ void initGL(void)
     glUniform3fv(uLightPosLoc, 1, (GLfloat*)&lightPosition);
 
     /* Load ambient light value */
-    glUniform1f(uAmbientLightLoc, DEFAULT_AMBIENT);
+    glUniform3f(uAmbientLightLoc, DEFAULT_AMBIENT);
 
     /* Load specular strength */
     glUniform1f(uSpecularStrengthLoc, DEFAULT_SPECULAR);
@@ -559,7 +560,7 @@ void initGL(void)
     glUniform1f(uShininessLoc, DEFAULT_SHININESS);
 
     /* Load light source diffuse */
-    glUniform1f(uLightSrcIntensityLoc, DEFAULT_LIGHTSRCINTENSITY);
+    glUniform3f(uLightSrcIntensityLoc, DEFAULT_LIGHTSRCINTENSITY);
 }
 
 
@@ -640,9 +641,19 @@ GLboolean checkPrefix(char *line, char *expPrefix)
 void setMaterialDefaults(material_t *material)
 {
     material->Ns = 100.0f;
-    material->Ka = 0.0f;
-    material->Kd = 1.0;
-    material->Ks = 0.01f;
+
+    material->Ka.x = 0.0f;
+    material->Ka.x = 0.0f;
+    material->Ka.x = 0.0f;
+
+    material->Kd.x = 1.0;
+    material->Kd.y = 1.0;
+    material->Kd.z = 1.0;
+
+    material->Ks.x = 0.01f;
+    material->Ks.y = 0.01f;
+    material->Ks.z = 0.01f;
+
     material->Ni = 1.0f;
     material->d = 1.0f;
     material->illum = 1.0f;
@@ -713,15 +724,15 @@ GLboolean loadMtlFile(object_t *object, material_t *materials, char *mtlFilename
                                     break;
 
                                 case KA:
-                                    sscanf(line, "%s %f", keyword, &materials[i].Ka);
+                                    sscanf(line, "%s %f %f %f", keyword, &materials[i].Ka.x, &materials[i].Ka.y, &materials[i].Ka.z);
                                     break;
 
                                 case KD:
-                                    sscanf(line, "%s %f", keyword, &materials[i].Kd);
+                                    sscanf(line, "%s %f %f %f", keyword, &materials[i].Kd.x, &materials[i].Kd.y, &materials[i].Kd.z);
                                     break;
 
                                 case KS:
-                                    sscanf(line, "%s %f", keyword, &materials[i].Ks);
+                                    sscanf(line, "%s %f %f %f", keyword, &materials[i].Ks.x, &materials[i].Ks.y, &materials[i].Ks.z);
                                     break;
 
                                 case NI:
@@ -958,16 +969,16 @@ void drawVertices(object_t *object, material_t *materials)
         }
 
         /* Apply material parameters */
-        glUniform1f(uKaLoc, object->materialChange[i].material->Ka);
-        glUniform1f(uKdLoc, object->materialChange[i].material->Kd);
-        glUniform1f(uKsLoc, object->materialChange[i].material->Ks);
+        glUniform3fv(uKaLoc, 1, (GLfloat *)&object->materialChange[i].material->Ka);
+        glUniform3fv(uKdLoc, 1, (GLfloat *)&object->materialChange[i].material->Kd);
+        glUniform3fv(uKsLoc, 1, (GLfloat *)&object->materialChange[i].material->Ks);
         glUniform1f(uDLoc, object->materialChange[i].material->d);
 
         /* Check dissolve factor */
         if (object->materialChange[i].material->d != 1.0f) 
         {
             glEnable(GL_BLEND);
-            glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
         }
         else
         {

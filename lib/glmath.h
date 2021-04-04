@@ -25,17 +25,17 @@
 /*******************************************************************/
 typedef struct _vec4_t
 {
-    float x;
-    float y;
-    float z;
-    float w;
+    GLfloat x;
+    GLfloat y;
+    GLfloat z;
+    GLfloat w;
 } vec4_t;
 
 typedef struct _vec3_t
 {
-    float x;
-    float y;
-    float z;
+    GLfloat x;
+    GLfloat y;
+    GLfloat z;
 } vec3_t;
 
 
@@ -48,8 +48,8 @@ vec3_t scalarProd(vec3_t v, GLfloat u);
 GLfloat dotProd(vec3_t v, vec3_t u);
 vec3_t subProd(vec3_t v, vec3_t u);
 vec3_t addProd(vec3_t v, vec3_t u);
-void matrix4x4By4x4(float *src1, float *src2, float *dest);
-void matrix4x4By4x1(float *src1, float *src2, float *dest);
+void matrix4x4By4x4(GLfloat *src1, GLfloat *src2, GLfloat *dest);
+void matrix4x4By4x1(GLfloat *src1, GLfloat *src2, GLfloat *dest);
 void generateRotationMatrix(GLfloat angle, vec3_t axis, GLfloat *mat);
 void generateScaleTranslationMatrix(vec3_t scale, vec3_t translate, GLfloat *mat);
 void setIdentityMatrix(GLfloat* mat);
