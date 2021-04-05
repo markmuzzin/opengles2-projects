@@ -7,8 +7,10 @@ System Setup
 - Requires libglfw3-dev and libgles2-mesa-dev (sudo apt-get install libglfw3-dev libgles2-mesa-dev)
 - Build command is located at the top of the file
 
-![]("https://user-images.githubusercontent.com/81455676/112710788-11d1c500-8e9a-11eb-8da4-dc66f4137177.png"=512x384)
+
+<img src="https://user-images.githubusercontent.com/81455676/113638710-7aad0000-9645-11eb-9dc0-22081b768084.png" align="right" width="512" height="384">
 SpaceScene.c
+
 - Simulates orbiting planets, each with their own planetary roataion
 - Texture-based rings, two layer color + mask
 - Camera pan, rotation and zoom
@@ -25,8 +27,9 @@ SpaceScene.c
 <br>
 <br>
 
-![]("https://user-images.githubusercontent.com/81455676/112711267-76425380-8e9d-11eb-8739-689a802de7aa.png"=512x384)
+<img src="https://user-images.githubusercontent.com/81455676/112711267-76425380-8e9d-11eb-8739-689a802de7aa.png" align="right" width="512" height="384">
 ObjModelViewer.c
+
 - Wavefront .obj files (https://en.wikipedia.org/wiki/Wavefront_.obj_file)
 - Currenlty supports parsing of vertices, multiple textures and faces, (v/vt/f)
 - Loading of material file, texture filenames
