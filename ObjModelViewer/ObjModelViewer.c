@@ -86,7 +86,7 @@
 #define DEFAULT_SHININESS           32.0f
 
 #define DEFAULT_AMBIENT             0.3f, 0.3f, 0.3f
-#define DEFAULT_LIGHTSRCINTENSITY   0.9f, 0.9f, 0.9f
+#define DEFAULT_LIGHTSRCCOLOR       0.9f, 0.9f, 0.9f
 
 #define KEYS_UP                     65
 #define KEYS_DOWN                   'B'
@@ -141,6 +141,7 @@ typedef struct _object_t
 
     char *materialLibFilename;
     GLuint materialCount;
+
     material_change_t materialChange[MAX_MATERIAL_CHANGES];
     GLuint materialChangeCount;
 } object_t;
@@ -203,7 +204,7 @@ static GLint uSpecularStrengthLoc        = -1;
 static GLint uShininessLoc               = -1;
 static GLint uLightPosLoc                = -1;
 static GLint uAmbientLightLoc            = -1;
-static GLint uLightSrcIntensityLoc       = -1;
+static GLint uLightSrcColorLoc           = -1;
 static GLint uKaLoc                      = -1;
 static GLint uKdLoc                      = -1;
 static GLint uKsLoc                      = -1;
@@ -245,7 +246,7 @@ static const GLchar* fragment_shader_source =
     "uniform float uShininess;\n"
     "uniform vec3 uAmbientLight;\n"
 
-    "uniform vec3 uLightSrcIntensity;\n"
+    "uniform vec3 uLightSrcColor;\n"
 
     "uniform vec3 uKa;\n"
     "uniform vec3 uKs;\n"
@@ -269,14 +270,12 @@ static const GLchar* fragment_shader_source =
         "vec3 viewDirection = normalize(uViewPosition - vPosition);\n"
         "vec3 reflectDirection = reflect(-lightDirection, normal);\n"
 
-        "vec3 diffuse = (Ka + uLightSrcIntensity) * Kd * max(dot(normal, lightDirection), 0.0);\n"
+        "vec3 diffuse = (Ka + uLightSrcColor) * Kd * max(dot(normal, lightDirection), 0.0);\n"
         "vec3 specular = Ks * pow(max(dot(viewDirection, reflectDirection), 0.0), uShininess);\n"
-        "vec3 dissolve_vec = (d == 1.0) ? vec3(1.0, 1.0, 1.0) : 1.0 - (normal * vPosition) * (1.0 - d);\n"
-        "float dissolve = dot(dissolve_vec, vec3(1.0, 1.0, 1.0)) / 3.0;\n"
 
         "vec4 color = texture2D(uTextureColor, vTexCoord);\n"
 
-        "gl_FragColor = color.bgra * vec4(diffuse + specular + uAmbientLight, uD);\n"
+        "gl_FragColor = color.bgra * vec4(diffuse + specular + uAmbientLight, d);\n"
 
    "}\n"
 };
@@ -425,7 +424,7 @@ void loadShader(void)
     uKsLoc = glGetUniformLocation(shaderProgram, "uKs");
     uDLoc = glGetUniformLocation(shaderProgram, "uD");
 
-    uLightSrcIntensityLoc = glGetUniformLocation(shaderProgram, "uLightSrcIntensity");
+    uLightSrcColorLoc = glGetUniformLocation(shaderProgram, "uLightSrcColor");
 
 
     /* Use program */
@@ -560,7 +559,7 @@ void initGL(void)
     glUniform1f(uShininessLoc, DEFAULT_SHININESS);
 
     /* Load light source diffuse */
-    glUniform3f(uLightSrcIntensityLoc, DEFAULT_LIGHTSRCINTENSITY);
+    glUniform3f(uLightSrcColorLoc, DEFAULT_LIGHTSRCCOLOR);
 }
 
 
@@ -1071,11 +1070,27 @@ void prepareObjectArrays(object_t *object)
 }
 
 
-void cleanUp(object_t *object)
+void cleanUp(object_t *object, material_t *material)
 {
+    GLuint i;
+
     glDisableVertexAttribArray(aVertexLoc);
     glDisableVertexAttribArray(aNormalLoc);
     glDisableVertexAttribArray(aTexCoordsLoc);
+
+    for(i=0;i<object->materialCount;i++)
+    {
+        if ( (material+i)->fileName != NULL )
+        {
+            free((material+i)->fileName);
+        }
+    }
+
+
+    if( object->materialLibFilename != NULL )
+    {
+        free(object->materialLibFilename);
+    }
 
     if( object->vertArray != NULL )
     {
@@ -1123,7 +1138,7 @@ GLboolean loadModel(object_t *object, material_t *materials, char *objFileName)
 
     if ( GL_FALSE == loadObjFile(object, materials, objFileName) )
     {
-        cleanUp(object);
+        cleanUp(object, materials);
         return GL_FALSE;
     }
     printf("done\n");
@@ -1266,7 +1281,7 @@ int main(int argc, char **argv)
 
     glfwTerminate();
 
-    cleanUp(&object);
+    cleanUp(&object, materials);
 
     return 0;
 }
