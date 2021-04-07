@@ -25,30 +25,6 @@
 
 #define BUFFER_OFFSET(i)            ((char *)NULL + (i))
 
-#define V                           (1<<0)
-#define VT                          (1<<1)
-#define VN                          (1<<2)
-#define F                           (1<<3)
-
-#define NS                          (1<<4)
-#define KA                          (1<<5)
-#define KD                          (1<<6)
-#define KS                          (1<<7)
-#define NI                          (1<<8)
-#define D                           (1<<9)
-#define ILLUM                       (1<<10)
-#define MAP_KD                      (1<<11)
-
-#define USEMTL                      (1<<12)
-#define NEWMTL                      (1<<13)
-#define MTLLIB                      (1<<14)
-#define BLANK                       (1<<15)
-
-#define LIGHTPOS                    (1<<16)
-#define CAMPOS                      (1<<17)
-#define CAMFRONT                    (1<<18)
-#define CAMUP                       (1<<19)
-
 #define ELEMENTS_PER_FACE           3
 #define ELEMENTS_PER_VERTEX         3
 #define ELEMENTS_PER_TEXCOORDS      2
@@ -667,8 +643,6 @@ GLboolean loadMtlFile(object_t *object, material_t *materials, char *mtlFilename
     FILE *pFile;
     GLuint i;
     GLboolean endOfEntry = GL_FALSE;
-    GLuint entry, newmtl, map_Kd, matEntry;
-    GLuint ns, ka, kd, ks, ni, d, blank; 
 
     pFile = fopen(mtlFilename, "rb");
     if (pFile == NULL)
@@ -680,92 +654,70 @@ GLboolean loadMtlFile(object_t *object, material_t *materials, char *mtlFilename
     /* Get the line entry */
     while(fgets(line, STRLEN, pFile) != NULL)
     {
-        newmtl = checkPrefix(line, "newmtl ") ? NEWMTL : 0;
-
-        entry = newmtl;
-
-        switch(entry)
+        if ( checkPrefix(line, "newmtl ") )
         {
-            case NEWMTL:
+            endOfEntry = GL_FALSE;
+            sscanf(line, "%s %s", keyword, stringName);
 
-                endOfEntry = GL_FALSE;
-                sscanf(line, "%s %s", keyword, stringName);
-
-                for(i=0;i<object->materialCount && !endOfEntry;i++)
+            for(i=0;i<object->materialCount && !endOfEntry;i++)
+            {
+                /* Check if newmtl matches one of the names in the material list */                        
+                if( 0 == strcmp(materials[i].name, stringName) )
                 {
-                    /* Check if newmtl matches one of the names in the material list */                        
-                    if( 0 == strcmp(materials[i].name, stringName) )
+                    /* Set the default values in case the material file does not specify them */
+                    setMaterialDefaults(&materials[i]);
+
+                    /* If so, cycle through each entry until a blank line is found */
+                    while(!endOfEntry)
                     {
-                        /* Set the default values in case the material file does not specify them */
-                        setMaterialDefaults(&materials[i]);
+                        memset(line, 0, STRLEN);
+                        fgets(line, STRLEN, pFile);
 
-                        /* If so, cycle through each entry until a blank line is found */
-                        while(!endOfEntry)
+                        if( checkPrefix(line, "Ns ") )
                         {
-                            memset(line, 0, STRLEN);
-                            fgets(line, STRLEN, pFile);
-
-                            ns     = checkPrefix(line,     "Ns ") ? NS : 0;
-                            ka     = checkPrefix(line,     "Ka ") ? KA : 0;
-                            kd     = checkPrefix(line,     "Kd ") ? KD : 0;
-                            ks     = checkPrefix(line,     "Ks ") ? KS : 0;
-                            ni     = checkPrefix(line,     "Ni ") ? NI : 0;
-                            d      = checkPrefix(line,      "d ") ? D  : 0;
-                            map_Kd = checkPrefix(line, "map_Kd ") ? MAP_KD : 0;
-                            blank  = strlen(line) <= 2 ? BLANK : 0;
-
-                            matEntry = map_Kd | ns | ka | kd | ks | ni | d | blank;
-
-                            switch(matEntry)
+                            sscanf(line, "%s %f", keyword, &materials[i].Ns);
+                        }
+                        else if( checkPrefix(line, "Ka ") )
+                        {
+                            sscanf(line, "%s %f %f %f", keyword, &materials[i].Ka.x, &materials[i].Ka.y, &materials[i].Ka.z);
+                        }
+                        else if( checkPrefix(line, "Kd ") )
+                        {
+                            sscanf(line, "%s %f %f %f", keyword, &materials[i].Kd.x, &materials[i].Kd.y, &materials[i].Kd.z);
+                        }
+                        else if( checkPrefix(line, "Ks ") )
+                        {
+                            sscanf(line, "%s %f %f %f", keyword, &materials[i].Ks.x, &materials[i].Ks.y, &materials[i].Ks.z);
+                        }
+                        else if( checkPrefix(line, "Ni ") )
+                        {
+                            sscanf(line, "%s %f", keyword, &materials[i].Ni);
+                        }
+                        else if( checkPrefix(line, "d ") )
+                        {
+                            sscanf(line, "%s %f", keyword, &materials[i].d);
+                        }
+                        else if( checkPrefix(line, "illum ") )
+                        {
+                            sscanf(line, "%s %f", keyword, &materials[i].illum);
+                        }
+                        else if( checkPrefix(line, "map_Kd ") )
+                        {
+                            sscanf(line, "%s %s", keyword, stringName);
+                            materials[i].fileName = (char *)malloc(strlen(stringName));
+                            strcpy(materials[i].fileName, stringName);                                    
+                        }
+                        else
+                        {
+                            /* Check for blank line */
+                            if ( strlen(line) <= 2 )
                             {
-                                case NS: 
-                                    sscanf(line, "%s %f", keyword, &materials[i].Ns);
-                                    break;
-
-                                case KA:
-                                    sscanf(line, "%s %f %f %f", keyword, &materials[i].Ka.x, &materials[i].Ka.y, &materials[i].Ka.z);
-                                    break;
-
-                                case KD:
-                                    sscanf(line, "%s %f %f %f", keyword, &materials[i].Kd.x, &materials[i].Kd.y, &materials[i].Kd.z);
-                                    break;
-
-                                case KS:
-                                    sscanf(line, "%s %f %f %f", keyword, &materials[i].Ks.x, &materials[i].Ks.y, &materials[i].Ks.z);
-                                    break;
-
-                                case NI:
-                                    sscanf(line, "%s %f", keyword, &materials[i].Ni);
-                                    break;
-
-                                case D:
-                                    sscanf(line, "%s %f", keyword, &materials[i].d);
-                                    break;
-
-                                case ILLUM:
-                                    sscanf(line, "%s %f", keyword, &materials[i].illum);
-                                    break;
-
-                                case MAP_KD:
-                                    sscanf(line, "%s %s", keyword, stringName);
-                                    materials[i].fileName = (char *)malloc(strlen(stringName));
-                                    strcpy(materials[i].fileName, stringName);                                    
-                                    break;
-                                
-                                case BLANK:
-                                    endOfEntry = GL_TRUE;
-                                    break;
-
-                                default:
-                                    break;
+                                  endOfEntry = GL_TRUE;
                             }
                         }
                     }
                 }
-                break;
-
-            default:
-                break;
+            }
         }
     }
 
@@ -785,8 +737,7 @@ GLboolean loadObjFile(object_t *object, material_t *materials, char *objFilename
     GLint indices[9];
     FILE *pFile = NULL;
     GLboolean haveTexture = GL_FALSE;
-    GLuint i, v, vt, vn, f, usemtl, mtllib;
-    GLuint entry, lightpos, campos, camup, camfront;
+    GLuint i;
 
     /* Open object file */
     pFile = fopen(objFilename, "r");
@@ -799,141 +750,114 @@ GLboolean loadObjFile(object_t *object, material_t *materials, char *objFilename
 
     /* Get the line entry */
     while(fgets(line, STRLEN, pFile) != NULL)
-    {
-        v        = checkPrefix(line, "v "       ) ? V        : 0;
-        vt       = checkPrefix(line, "vt "      ) ? VT       : 0;
-        vn       = checkPrefix(line, "vn "      ) ? VN       : 0;
-        f        = checkPrefix(line, "f "       ) ? F        : 0;
-        usemtl   = checkPrefix(line, "usemtl "  ) ? USEMTL   : 0;
-        mtllib   = checkPrefix(line, "mtllib "  ) ? MTLLIB   : 0;
-        lightpos = checkPrefix(line, "lightpos ") ? LIGHTPOS : 0;
-        campos   = checkPrefix(line, "campos "  ) ? CAMPOS   : 0;
-        camup    = checkPrefix(line, "camup "   ) ? CAMUP    : 0;
-        camfront = checkPrefix(line, "camfront ") ? CAMFRONT : 0;
-        
-        entry = v | vt | vn | f | usemtl | mtllib | campos | lightpos | camfront | camup;
-
-        switch(entry)
+    {       
+        if( checkPrefix(line, "v ") )
         {
-            case V:
-                sscanf(line, "%s %f %f %f", prefix, &value[0], &value[1], &value[2]);
-                addFloatData(&object->v, value, &object->numOfVertices, 3); 
-                break;
-        
-            case VT:
-                sscanf(line, "%s %f %f", prefix, &value[0], &value[1]);
-                addFloatData(&object->vt, value, &object->numOfTexCoords, 2); 
-                break;
+            sscanf(line, "%s %f %f %f", prefix, &value[0], &value[1], &value[2]);
+            addFloatData(&object->v, value, &object->numOfVertices, 3); 
+        }
+        else if( checkPrefix(line, "vt ") )
+        {
+            sscanf(line, "%s %f %f", prefix, &value[0], &value[1]);
+            addFloatData(&object->vt, value, &object->numOfTexCoords, 2); 
+        }
+        else if( checkPrefix(line, "vn ") )
+        {
+            sscanf(line, "%s %f %f %f", prefix, &value[0], &value[1], &value[2]);
+            addFloatData(&object->vn, value, &object->numOfNormals, 3); 
+        }
+        else if( checkPrefix(line, "f ") )
+        {
+            if(object->numOfNormals == 0)
+            {
+                sscanf(line, "%s %d/%d %d/%d %d/%d", prefix, 
+                                &indices[0], &indices[1],
+                                &indices[2], &indices[3],
+                                &indices[4], &indices[5]);
 
-            case VN:
-                sscanf(line, "%s %f %f %f", prefix, &value[0], &value[1], &value[2]);
-                addFloatData(&object->vn, value, &object->numOfNormals, 3); 
-                break;
+                addIntegerData(&object->f, indices, &object->numOfFaces, 6);
+            }
+            else
+            {
+                sscanf(line, "%s %d/%d/%d %d/%d/%d %d/%d/%d", prefix, 
+                                &indices[0], &indices[1], &indices[2],
+                                &indices[3], &indices[4], &indices[5],
+                                &indices[6], &indices[7], &indices[8]);
+                addIntegerData(&object->f, indices, &object->numOfFaces, 9);
+            }
+        }
+        else if( checkPrefix(line, "usemtl ") )
+        {
+            /* Reset flag */
+            haveTexture = GL_FALSE;
 
-            case F:
-                if(object->numOfNormals == 0)
+            sscanf(line, "%s %s", keyword, stringName);
+
+            /* Check if we have this texture */
+            for(i=0;i<object->materialCount;i++)
+            {
+                if(0 == strcmp(materials[i].name, stringName)) 
                 {
-                    sscanf(line, "%s %d/%d %d/%d %d/%d", prefix, 
-                                    &indices[0], &indices[1],
-                                    &indices[2], &indices[3],
-                                    &indices[4], &indices[5]);
-
-                    addIntegerData(&object->f, indices, &object->numOfFaces, 6);
-                }
-                else
-                {
-                    sscanf(line, "%s %d/%d/%d %d/%d/%d %d/%d/%d", prefix, 
-                                    &indices[0], &indices[1], &indices[2],
-                                    &indices[3], &indices[4], &indices[5],
-                                    &indices[6], &indices[7], &indices[8]);
-                    addIntegerData(&object->f, indices, &object->numOfFaces, 9);
-                }
-                break;
-
-            case USEMTL:
-                /* Reset flag */
-                haveTexture = GL_FALSE;
-
-                sscanf(line, "%s %s", keyword, stringName);
-
-                /* Check if we have this texture */
-                for(i=0;i<object->materialCount;i++)
-                {
-                    if(0 == strcmp(materials[i].name, stringName)) 
-                    {
-                        /* We have this material already */
-                        haveTexture = GL_TRUE;
-
-                        /* Mark the start face that uses this texture */
-                        object->materialChange[object->materialChangeCount].startFace = object->numOfFaces;
-                        object->materialChange[object->materialChangeCount].startFace /= (ELEMENTS_PER_FACE*ELEMENTS_PER_VERTEX);
-                        object->materialChange[object->materialChangeCount].material = &materials[i];
-                        object->materialChangeCount++;
-                        break;
-                    }
-                }
-
-                /* If we dont have this texture name stored yet */
-                if ( GL_FALSE == haveTexture ) 
-                {
-                    /* Add material name */
-                    materials[object->materialCount].name = (char *)malloc(strlen(stringName));
-                    memset(materials[object->materialCount].name, 0, strlen(stringName));
-                    strcpy(materials[object->materialCount].name, stringName);
+                    /* We have this material already */
+                    haveTexture = GL_TRUE;
 
                     /* Mark the start face that uses this texture */
                     object->materialChange[object->materialChangeCount].startFace = object->numOfFaces;
                     object->materialChange[object->materialChangeCount].startFace /= (ELEMENTS_PER_FACE*ELEMENTS_PER_VERTEX);
-                    object->materialChange[object->materialChangeCount].material = &materials[object->materialCount];
+                    object->materialChange[object->materialChangeCount].material = &materials[i];
                     object->materialChangeCount++;
-
-                    /* Increment material count */
-                    object->materialCount++;
+                    break;
                 }
-                break;
+            }
 
-            case MTLLIB:
-                sscanf(line, "%s %s", keyword, stringName);
+            /* If we dont have this texture name stored yet */
+            if ( GL_FALSE == haveTexture ) 
+            {
+                /* Add material name */
+                materials[object->materialCount].name = (char *)malloc(strlen(stringName));
+                memset(materials[object->materialCount].name, 0, strlen(stringName));
+                strcpy(materials[object->materialCount].name, stringName);
 
-                /* Add material filename */
-                object->materialLibFilename = (char *)malloc(strlen(stringName));
-                memset(object->materialLibFilename, 0, strlen(stringName));
-                strcpy(object->materialLibFilename, stringName);
-                break;
+                /* Mark the start face that uses this texture */
+                object->materialChange[object->materialChangeCount].startFace = object->numOfFaces;
+                object->materialChange[object->materialChangeCount].startFace /= (ELEMENTS_PER_FACE*ELEMENTS_PER_VERTEX);
+                object->materialChange[object->materialChangeCount].material = &materials[object->materialCount];
+                object->materialChangeCount++;
 
-            case LIGHTPOS:
-                sscanf(line, "%s %f %f %f", prefix, &value[0], &value[1], &value[2]);
-                lightPosition.x = value[0];
-                lightPosition.y = value[1];
-                lightPosition.z = value[2];
+                /* Increment material count */
+                object->materialCount++;
+            }
+        }
+        else if( checkPrefix(line, "mtllib ") )
+        {
+            sscanf(line, "%s %s", keyword, stringName);
 
-                /* Load spotligt position */
-                glUniform3fv(uLightPosLoc, 1, (GLfloat*)&lightPosition);
-                break;
-
-            case CAMPOS:
-                sscanf(line, "%s %f %f %f", prefix, &value[0], &value[1], &value[2]);
-                cameraPosition.x = value[0];
-                cameraPosition.y = value[1];
-                cameraPosition.z = value[2];
-                break;      
-
-            case CAMFRONT:
-                sscanf(line, "%s %f %f %f", prefix, &value[0], &value[1], &value[2]);
-                cameraFront.x = value[0];
-                cameraFront.y = value[1];
-                cameraFront.z = value[2];
-                break;      
-
-            case CAMUP:
-                sscanf(line, "%s %f %f %f", prefix, &value[0], &value[1], &value[2]);
-                cameraUp.x = value[0];
-                cameraUp.y = value[1];
-                cameraUp.z = value[2];
-                break;      
-
-            default:
-                break;
+            /* Add material filename */
+            object->materialLibFilename = (char *)malloc(strlen(stringName)+1);
+            memset(object->materialLibFilename, 0, strlen(stringName)+1);
+            strcpy(object->materialLibFilename, stringName);
+        }
+        else if( checkPrefix(line, "lightpos ") )
+        {
+            sscanf(line, "%s %f %f %f", prefix, &lightPosition.x, &lightPosition.y, &lightPosition.z);
+            /* Load spotligt position */
+            glUniform3fv(uLightPosLoc, 1, (GLfloat*)&lightPosition);
+        }
+        else if( checkPrefix(line, "campos ") )
+        {
+            sscanf(line, "%s %f %f %f", prefix, &cameraPosition.x, &cameraPosition.y, &cameraPosition.z);
+        }
+        else if( checkPrefix(line, "camfront ") )
+        {
+            sscanf(line, "%s %f %f %f", prefix, &cameraFront.x, &cameraFront.y, &cameraFront.z);
+        }
+        else if( checkPrefix(line, "camup ") )
+        {
+            sscanf(line, "%s %f %f %f", prefix, &cameraUp.x, &cameraUp.y, &cameraUp.z);
+        }
+        else
+        {
+        
         }
     }
 
@@ -995,16 +919,13 @@ void drawVertices(object_t *object, material_t *materials)
 
 void prepareObjectArrays(object_t *object)
 {
-    GLint i;
-    GLint v1 = 0, v2 = 0, v3 = 0;
-    GLint vt1 = 0, vt2 = 0, vt3 = 0;
-    GLint vn1 = 0, vn2 = 0, vn3 = 0;
-    GLuint vc = 0, tc = 0, vn = 0;
+    GLint i, j;
+    GLint v[3];
+    GLint vt[3];
+    GLint vn[3];
+    GLuint vc = 0, tc = 0, vnc = 0;
 
     /* Assign pointers to input values */
-    objVerts3_t *vertices = (objVerts3_t *)object->v;
-    objVerts3_t *norms = (objVerts3_t *)object->vn;
-    objTexCoords2_t *tex = (objTexCoords2_t *)object->vt;
     GLuint *faces = (GLuint *)object->f;
 
     /* Create vertex and texture buffers */
@@ -1017,55 +938,43 @@ void prepareObjectArrays(object_t *object)
 
     for(i=0;i<object->numOfFaces;i++)
     {
-        v1  = faces[(stride*i)+0]-1;
-        vt1 = faces[(stride*i)+1]-1;
-        v2  = faces[(stride*i)+2+offset]-1;
-        vt2 = faces[(stride*i)+3+offset]-1;
-        v3  = faces[(stride*i)+4+(offset*2)]-1;           
-        vt3 = faces[(stride*i)+5+(offset*2)]-1;
+        /* Get offsets from face inputs */
+        v[0]  = faces[(stride*i)+0]-1;
+        vt[0] = faces[(stride*i)+1]-1;
+        v[1]  = faces[(stride*i)+2+offset]-1;
+        vt[1] = faces[(stride*i)+3+offset]-1;
+        v[2]  = faces[(stride*i)+4+(offset*2)]-1;           
+        vt[2] = faces[(stride*i)+5+(offset*2)]-1;
         
+        /* If this file contains normals */
         if(object->numOfNormals != 0)
         {
-            vn1 = faces[(stride*i)+2]-1;
-            vn2 = faces[(stride*i)+5]-1;
-            vn3 = faces[(stride*i)+8]-1;
+            vn[0] = faces[(stride*i)+2]-1;
+            vn[1] = faces[(stride*i)+5]-1;
+            vn[2] = faces[(stride*i)+8]-1;
+
+            for(j=0; j<3; j++)
+            {
+                object->normArray[vnc++] = *(object->vn + (vn[j]*ELEMENTS_PER_VERTEX + 0)); 
+                object->normArray[vnc++] = *(object->vn + (vn[j]*ELEMENTS_PER_VERTEX + 1)); 
+                object->normArray[vnc++] = *(object->vn + (vn[j]*ELEMENTS_PER_VERTEX + 2)); 
+            }
         }
 
-        object->vertArray[vc++] = vertices[v1].x;
-        object->vertArray[vc++] = vertices[v1].y;
-        object->vertArray[vc++] = vertices[v1].z;
-        
-        object->vertArray[vc++] = vertices[v2].x;
-        object->vertArray[vc++] = vertices[v2].y;
-        object->vertArray[vc++] = vertices[v2].z;
-
-        object->vertArray[vc++] = vertices[v3].x;
-        object->vertArray[vc++] = vertices[v3].y;
-        object->vertArray[vc++] = vertices[v3].z;
-
-        if(object->numOfNormals != 0)
+        /* Load vertices */
+        for(j=0; j<3; j++)
         {
-            object->normArray[vn++] = norms[vn1].x;
-            object->normArray[vn++] = norms[vn1].y;
-            object->normArray[vn++] = norms[vn1].z;
-            
-            object->normArray[vn++] = norms[vn2].x;
-            object->normArray[vn++] = norms[vn2].y;
-            object->normArray[vn++] = norms[vn2].z;
-
-            object->normArray[vn++] = norms[vn3].x;
-            object->normArray[vn++] = norms[vn3].y;
-            object->normArray[vn++] = norms[vn3].z;        
+            object->vertArray[vc++] = *(object->v + (v[j]*ELEMENTS_PER_VERTEX + 0));  
+            object->vertArray[vc++] = *(object->v + (v[j]*ELEMENTS_PER_VERTEX + 1));
+            object->vertArray[vc++] = *(object->v + (v[j]*ELEMENTS_PER_VERTEX + 2));
         }
 
-        object->texArray[tc++] = tex[vt1].x;
-        object->texArray[tc++] = tex[vt1].y;
-
-        object->texArray[tc++] = tex[vt2].x;
-        object->texArray[tc++] = tex[vt2].y;
-
-        object->texArray[tc++] = tex[vt3].x;
-        object->texArray[tc++] = tex[vt3].y;
+        /* Load tex coords */
+        for(j=0; j<3; j++)
+        {
+            object->texArray[tc++] = *(object->vt + (vt[j]*ELEMENTS_PER_TEXCOORDS + 0));  
+            object->texArray[tc++] = *(object->vt + (vt[j]*ELEMENTS_PER_TEXCOORDS + 1));  
+        }
     }
 }
 
@@ -1144,8 +1053,8 @@ GLboolean loadModel(object_t *object, material_t *materials, char *objFileName)
     printf("done\n");
 
     /* Construct material filenamd */
-    mtlFile = (char*)realloc(mtlFile, (strlen(mtlFile) + strlen(object->materialLibFilename)));
-    strncat(mtlFile, object->materialLibFilename, strlen(object->materialLibFilename));
+    mtlFile = (char*)realloc(mtlFile, (strlen(mtlFile) + strlen(object->materialLibFilename))+1);
+    strncat(mtlFile, object->materialLibFilename, strlen(object->materialLibFilename)+1);
 
     /* Load and parse material file */
     printf("Loading mtl file: %s...", mtlFile);
