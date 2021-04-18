@@ -27,7 +27,6 @@ System Setup
     <li> Loading of material file, texture filenames<br />
     <li> Camera pan, rotation and zoom<br />
     <li> 3D scanned Obj models from: https://www.artec3d.com/3d-models/obj<br />
-    <a href="http://markmuzzin.blogspot.com/2014/04/milling-timing-pulleys-on-3-axis-mill.html">Blog Post</a><br />
     </td>
     <td>
     <img src="https://user-images.githubusercontent.com/81455676/112711267-76425380-8e9d-11eb-8739-689a802de7aa.png" align="right" width="512" height="384">
